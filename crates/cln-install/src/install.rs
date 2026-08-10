@@ -104,7 +104,7 @@ mod tests {
         tar.append_data(&mut header, kind.binary_name(), binary_bytes).unwrap();
         tar.into_inner().unwrap().finish().unwrap();
 
-        let sha = hex(Sha256::digest(&fs::read(&archive_path).unwrap()).as_slice());
+        let sha = hex(Sha256::digest(fs::read(&archive_path).unwrap()).as_slice());
         fs::write(dir.join(format!("{asset_name}.sha256")), format!("{sha}  {asset_name}\n")).unwrap();
     }
 
