@@ -1,0 +1,16 @@
+[package]
+name = "cln-layout"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed accessors and mutations for the ~/.cln/ on-disk layout."
+
+[dependencies]
+cln-shared = { workspace = true }
+semver = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
