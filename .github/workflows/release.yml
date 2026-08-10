@@ -26,11 +26,6 @@ jobs:
             arch: arm64
             target: aarch64-apple-darwin
             ext: tar.gz
-          - runner: macos-13
-            os: macos
-            arch: x86_64
-            target: x86_64-apple-darwin
-            ext: tar.gz
           - runner: ubuntu-latest
             os: linux
             arch: x86_64
