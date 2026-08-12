@@ -38,9 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The upstream comparison needs clean-server's tags. Without this the
-      # script still runs the local pin check and reports the upstream leg as
-      # skipped rather than passing it silently.
+      # The upstream comparison needs clean-server's tags, so fetch-depth: 0
+      # plus fetch-tags (checkout defaults the latter to false, which would
+      # leave the comparison permanently "pending" even once the tag lands).
+      # Without a usable checkout the script still runs the local pin check and
+      # reports the upstream leg as skipped rather than passing it silently.
       - name: check out clean-server
         uses: actions/checkout@v4
         continue-on-error: true
@@ -48,6 +50,7 @@ jobs:
           repository: Ivan-Pasco/clean-server
           path: .upstream/clean-server
           fetch-depth: 0
+          fetch-tags: true
 
       - name: check vendored contracts against pins and upstream
         env:

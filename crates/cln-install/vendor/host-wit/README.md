@@ -22,6 +22,14 @@ in place: a published `<host>@<version>` is immutable.
 |---|---|---|---|---|
 | `clean-server@0.7.0.wit` | `Ivan-Pasco/clean-server` | `host.wit` (repo root, per [HCV-02]) | `v0.7.0` (commit `54ca10d`) | `c4aaba83494e63577cb798e1483ce6604c6e55660010c5d0ced3be0d2a6963de` |
 
+> **`clean-server` v0.7.0 is not published yet.** As of 2026-08-12 the tag and
+> commit `54ca10d` exist only in a local checkout — `git ls-remote` shows the
+> remote's newest tag is `v0.6.0`. The vendored bytes are the real contract and
+> match the hash the ecosystem agreed to pin, so seeding is correct; but the
+> drift check's upstream leg reports `PENDING` and cannot enforce until
+> clean-server pushes. It begins enforcing automatically the moment the tag
+> appears — no change needed here.
+
 The WIT package inside each file is `clean:host@0.1.0` — one package for every
 host contract, per [CMOD-01]. The *file* version above is the **host's** release
 version, which is what names the cache entry (`<host>@<version>.wit`); it is not

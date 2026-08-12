@@ -68,9 +68,21 @@ check_upstream() {
         return
     fi
 
+    # A tag that does not exist upstream is a *pending publish*, not drift. A
+    # contract can be vendored from a local tag before the owning repo pushes
+    # it (clean-server v0.7.0 was in exactly this state when host-wit seeding
+    # landed). Report it loudly and keep going: the local pin check above still
+    # guards the bytes, and this leg starts enforcing the moment the tag
+    # appears. What must never happen is the tag existing and disagreeing —
+    # that falls through to the diff below and fails.
+    if ! git -C "$dir" rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+        note "PENDING  $host@$version — $tag is not published in $dir yet; upstream comparison deferred"
+        return
+    fi
+
     local upstream
     if ! upstream="$(git -C "$dir" show "$tag:$upstream_rel" 2>/dev/null)"; then
-        bad "$host@$version — cannot read $upstream_rel at $tag in $dir (fetch tags?)"
+        bad "$host@$version — $tag exists in $dir but has no $upstream_rel"
         return
     fi
 
