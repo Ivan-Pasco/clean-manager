@@ -24,7 +24,10 @@ impl RepoRef {
         if owner.is_empty() || name.is_empty() {
             return None;
         }
-        Some(Self { owner: owner.into(), name: name.into() })
+        Some(Self {
+            owner: owner.into(),
+            name: name.into(),
+        })
     }
 }
 
@@ -43,7 +46,10 @@ pub fn default_repo(kind: ToolchainKind) -> RepoRef {
         ToolchainKind::Framework => "clean-framework",
         ToolchainKind::Runtime => "clean-runtime",
     };
-    RepoRef { owner: DEFAULT_OWNER.into(), name: name.into() }
+    RepoRef {
+        owner: DEFAULT_OWNER.into(),
+        name: name.into(),
+    }
 }
 
 /// The env-var name that overrides the repo for a given kind.
@@ -87,7 +93,10 @@ mod tests {
     fn parse_accepts_owner_slash_name() {
         assert_eq!(
             RepoRef::parse("foo/bar"),
-            Some(RepoRef { owner: "foo".into(), name: "bar".into() })
+            Some(RepoRef {
+                owner: "foo".into(),
+                name: "bar".into()
+            })
         );
     }
 
@@ -116,15 +125,24 @@ mod tests {
         // failing test rather than a runtime 404 on a user's machine.
         assert_eq!(
             default_repo(ToolchainKind::Compiler),
-            RepoRef { owner: "Ivan-Pasco".into(), name: "clean-language-compiler".into() }
+            RepoRef {
+                owner: "Ivan-Pasco".into(),
+                name: "clean-language-compiler".into()
+            }
         );
         assert_eq!(
             default_repo(ToolchainKind::Framework),
-            RepoRef { owner: "Ivan-Pasco".into(), name: "clean-framework".into() }
+            RepoRef {
+                owner: "Ivan-Pasco".into(),
+                name: "clean-framework".into()
+            }
         );
         assert_eq!(
             default_repo(ToolchainKind::Runtime),
-            RepoRef { owner: "Ivan-Pasco".into(), name: "clean-runtime".into() }
+            RepoRef {
+                owner: "Ivan-Pasco".into(),
+                name: "clean-runtime".into()
+            }
         );
     }
 
@@ -133,7 +151,11 @@ mod tests {
         // If the repos move to an organization, DEFAULT_OWNER is the one edit.
         // This fails if someone hard-codes a divergent owner for a single kind.
         for k in ToolchainKind::ALL {
-            assert_eq!(default_repo(k).owner, DEFAULT_OWNER, "{k} diverges from DEFAULT_OWNER");
+            assert_eq!(
+                default_repo(k).owner,
+                DEFAULT_OWNER,
+                "{k} diverges from DEFAULT_OWNER"
+            );
         }
     }
 
@@ -150,13 +172,22 @@ mod tests {
 
         assert_eq!(
             resolve_repo_from(ToolchainKind::Framework, Some("my-fork/clean-framework")),
-            RepoRef { owner: "my-fork".into(), name: "clean-framework".into() }
+            RepoRef {
+                owner: "my-fork".into(),
+                name: "clean-framework".into()
+            }
         );
 
         // Surrounding whitespace is tolerated — a shell export easily adds it.
         assert_eq!(
-            resolve_repo_from(ToolchainKind::Framework, Some("  my-fork/clean-framework \n")),
-            RepoRef { owner: "my-fork".into(), name: "clean-framework".into() }
+            resolve_repo_from(
+                ToolchainKind::Framework,
+                Some("  my-fork/clean-framework \n")
+            ),
+            RepoRef {
+                owner: "my-fork".into(),
+                name: "clean-framework".into()
+            }
         );
 
         // A malformed override falls back to the default rather than

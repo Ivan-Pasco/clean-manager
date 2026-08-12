@@ -28,13 +28,19 @@ impl Layout {
     }
 
     /// The root of the layout — normally `~/.cln/`.
-    pub fn root(&self) -> &Path { &self.root }
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
 
     /// `~/.cln/bin/` — where the `cln` binary lives after install.
-    pub fn bin_dir(&self) -> PathBuf { self.root.join("bin") }
+    pub fn bin_dir(&self) -> PathBuf {
+        self.root.join("bin")
+    }
 
     /// `~/.cln/versions/` — parent of all per-kind version directories.
-    pub fn versions_root(&self) -> PathBuf { self.root.join("versions") }
+    pub fn versions_root(&self) -> PathBuf {
+        self.root.join("versions")
+    }
 
     /// `~/.cln/versions/<kind>/` — every installed version of a single kind.
     pub fn versions_dir(&self, kind: ToolchainKind) -> PathBuf {
@@ -42,7 +48,9 @@ impl Layout {
     }
 
     /// `~/.cln/active/` — the parent of the per-kind symlinks.
-    pub fn active_root(&self) -> PathBuf { self.root.join("active") }
+    pub fn active_root(&self) -> PathBuf {
+        self.root.join("active")
+    }
 
     /// `~/.cln/active/<kind>` — the symlink that points at the currently
     /// active version's directory under `versions/<kind>/`.
@@ -51,10 +59,14 @@ impl Layout {
     }
 
     /// `~/.cln/cache/` — where downloads land before extraction.
-    pub fn cache_dir(&self) -> PathBuf { self.root.join("cache") }
+    pub fn cache_dir(&self) -> PathBuf {
+        self.root.join("cache")
+    }
 
     /// `~/.cln/cache/downloads/` — verified archive blobs, keyed by SHA-256.
-    pub fn downloads_dir(&self) -> PathBuf { self.cache_dir().join("downloads") }
+    pub fn downloads_dir(&self) -> PathBuf {
+        self.cache_dir().join("downloads")
+    }
 
     /// Create the base directories that every M0 command assumes exist:
     /// root, bin, versions/{compiler,framework,runtime}, active, cache/downloads.
@@ -102,8 +114,7 @@ mod tests {
         assert!(l.active_root().is_dir());
         assert!(l.downloads_dir().is_dir());
         for k in ToolchainKind::ALL {
-            assert!(l.versions_dir(k).is_dir(),
-                "versions/{} should exist", k);
+            assert!(l.versions_dir(k).is_dir(), "versions/{} should exist", k);
         }
     }
 

@@ -9,10 +9,14 @@ use crate::extract::{extract_archive, ExtractError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
-    #[error(transparent)] Channel(#[from] ChannelError),
-    #[error(transparent)] Download(#[from] DownloadError),
-    #[error(transparent)] Extract(#[from] ExtractError),
-    #[error(transparent)] Activate(#[from] ActivateError),
+    #[error(transparent)]
+    Channel(#[from] ChannelError),
+    #[error(transparent)]
+    Download(#[from] DownloadError),
+    #[error(transparent)]
+    Extract(#[from] ExtractError),
+    #[error(transparent)]
+    Activate(#[from] ActivateError),
     #[error("io error preparing install: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -77,7 +81,12 @@ mod tests {
     use std::path::Path;
     use tempfile::tempdir;
 
-    fn plat() -> Platform { Platform { os: Os::Macos, arch: Arch::Arm64 } }
+    fn plat() -> Platform {
+        Platform {
+            os: Os::Macos,
+            arch: Arch::Arm64,
+        }
+    }
 
     fn seed_release_dir(
         root: &Path,
@@ -90,7 +99,10 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let asset_name = format!(
             "{}-{}-{}.{}",
-            kind.binary_name(), tag, platform, platform.archive_ext()
+            kind.binary_name(),
+            tag,
+            platform,
+            platform.archive_ext()
         );
         let archive_path = dir.join(&asset_name);
 
@@ -101,23 +113,36 @@ mod tests {
         header.set_size(binary_bytes.len() as u64);
         header.set_mode(0o755);
         header.set_cksum();
-        tar.append_data(&mut header, kind.binary_name(), binary_bytes).unwrap();
+        tar.append_data(&mut header, kind.binary_name(), binary_bytes)
+            .unwrap();
         tar.into_inner().unwrap().finish().unwrap();
 
         let sha = hex(Sha256::digest(fs::read(&archive_path).unwrap()).as_slice());
-        fs::write(dir.join(format!("{asset_name}.sha256")), format!("{sha}  {asset_name}\n")).unwrap();
+        fs::write(
+            dir.join(format!("{asset_name}.sha256")),
+            format!("{sha}  {asset_name}\n"),
+        )
+        .unwrap();
     }
 
     fn hex(bytes: &[u8]) -> String {
         let mut s = String::with_capacity(bytes.len() * 2);
-        for b in bytes { s.push_str(&format!("{b:02x}")); }
+        for b in bytes {
+            s.push_str(&format!("{b:02x}"));
+        }
         s
     }
 
     #[test]
     fn install_end_to_end_places_binary_and_activates() {
         let releases = tempdir().unwrap();
-        seed_release_dir(releases.path(), ToolchainKind::Compiler, "1.0.0", plat(), b"compiler-1.0.0");
+        seed_release_dir(
+            releases.path(),
+            ToolchainKind::Compiler,
+            "1.0.0",
+            plat(),
+            b"compiler-1.0.0",
+        );
 
         let home = tempdir().unwrap();
         let layout = Layout::new(home.path().join(".cln"));
@@ -136,13 +161,22 @@ mod tests {
         // Active symlink resolves to the version dir.
         let active = layout.active_link(ToolchainKind::Compiler);
         let resolved = fs::read_link(&active).unwrap();
-        assert_eq!(resolved, layout.version_dir(ToolchainKind::Compiler, &outcome.version));
+        assert_eq!(
+            resolved,
+            layout.version_dir(ToolchainKind::Compiler, &outcome.version)
+        );
     }
 
     #[test]
     fn install_is_idempotent_when_already_present() {
         let releases = tempdir().unwrap();
-        seed_release_dir(releases.path(), ToolchainKind::Runtime, "0.1.0", plat(), b"runtime-0.1.0");
+        seed_release_dir(
+            releases.path(),
+            ToolchainKind::Runtime,
+            "0.1.0",
+            plat(),
+            b"runtime-0.1.0",
+        );
 
         let home = tempdir().unwrap();
         let layout = Layout::new(home.path().join(".cln"));
@@ -164,7 +198,13 @@ mod tests {
         for kind in ToolchainKind::ALL {
             let sub = releases_root.path().join(kind.as_str());
             fs::create_dir_all(&sub).unwrap();
-            seed_release_dir(&sub, kind, "1.0.0", plat(), format!("{kind}-1.0.0").as_bytes());
+            seed_release_dir(
+                &sub,
+                kind,
+                "1.0.0",
+                plat(),
+                format!("{kind}-1.0.0").as_bytes(),
+            );
             let source = LocalDir::new(kind, &sub);
             let outcome = install(&layout, &source, &VersionSpec::Latest, plat(), true).unwrap();
             assert!(outcome.activated);
@@ -172,7 +212,11 @@ mod tests {
 
         for kind in ToolchainKind::ALL {
             let v = layout.active_version(kind).unwrap();
-            assert_eq!(v, "1.0.0".parse().unwrap(), "kind {kind} should be active at 1.0.0");
+            assert_eq!(
+                v,
+                "1.0.0".parse().unwrap(),
+                "kind {kind} should be active at 1.0.0"
+            );
         }
     }
 }

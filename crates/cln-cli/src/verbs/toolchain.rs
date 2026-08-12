@@ -85,7 +85,9 @@ fn resolve_install_positionals(pos: &[String]) -> Result<(Option<KindArg>, Strin
             })?;
             Ok((Some(parsed), version.clone()))
         }
-        _ => Err(anyhow::anyhow!("expected `<version>` or `<kind> <version>`")),
+        _ => Err(anyhow::anyhow!(
+            "expected `<version>` or `<kind> <version>`"
+        )),
     }
 }
 
@@ -174,7 +176,11 @@ pub fn list(args: ListArgs, env: &Env) -> Result<()> {
             continue;
         }
         for v in installed {
-            let marker = if Some(&v) == active.as_ref() { " (active)" } else { "" };
+            let marker = if Some(&v) == active.as_ref() {
+                " (active)"
+            } else {
+                ""
+            };
             println!("  {v}{marker}");
         }
     }

@@ -79,7 +79,10 @@ mod tests {
         let tmp = tempdir().unwrap();
         let l = Layout::new(tmp.path());
         // Not even ensure_base — should return empty, not error.
-        assert!(l.list_installed(ToolchainKind::Compiler).unwrap().is_empty());
+        assert!(l
+            .list_installed(ToolchainKind::Compiler)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

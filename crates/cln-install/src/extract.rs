@@ -11,13 +11,21 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractError {
     #[error("io error while extracting {archive}: {source}")]
-    Io { archive: PathBuf, #[source] source: io::Error },
+    Io {
+        archive: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("archive format not recognized for {0}")]
     UnknownFormat(String),
     #[error("archive {archive} did not contain expected binary {expected}")]
     MissingBinary { archive: PathBuf, expected: String },
     #[error("zip extract failed for {archive}: {source}")]
-    Zip { archive: PathBuf, #[source] source: zip::result::ZipError },
+    Zip {
+        archive: PathBuf,
+        #[source]
+        source: zip::result::ZipError,
+    },
 }
 
 /// Extract `archive` into `dest_dir`. `dest_dir` will be created; if it
@@ -140,7 +148,9 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), ExtractError> {
             archive: archive.into(),
             source,
         })?;
-        let Some(rel) = entry.enclosed_name() else { continue };
+        let Some(rel) = entry.enclosed_name() else {
+            continue;
+        };
         let out_path = dest.join(rel);
         if entry.is_dir() {
             fs::create_dir_all(&out_path).map_err(|source| ExtractError::Io {
@@ -159,10 +169,12 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), ExtractError> {
                 source,
             })?;
             let mut buf = Vec::with_capacity(entry.size() as usize);
-            entry.read_to_end(&mut buf).map_err(|source| ExtractError::Io {
-                archive: archive.into(),
-                source,
-            })?;
+            entry
+                .read_to_end(&mut buf)
+                .map_err(|source| ExtractError::Io {
+                    archive: archive.into(),
+                    source,
+                })?;
             io::Write::write_all(&mut out, &buf).map_err(|source| ExtractError::Io {
                 archive: archive.into(),
                 source,
@@ -252,10 +264,13 @@ mod tests {
         make_tar_gz(&archive, &[("readme.txt", b"not a binary")]);
 
         let target = staging.path().join("out");
-        let err = extract_archive(&archive, &target, "bundle.tar.gz", "clean-compiler")
-            .unwrap_err();
+        let err =
+            extract_archive(&archive, &target, "bundle.tar.gz", "clean-compiler").unwrap_err();
         assert!(matches!(err, ExtractError::MissingBinary { .. }));
-        assert!(!target.exists(), "failed extraction must not leave partial dest");
+        assert!(
+            !target.exists(),
+            "failed extraction must not leave partial dest"
+        );
     }
 
     #[test]

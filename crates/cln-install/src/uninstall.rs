@@ -11,9 +11,15 @@ use semver::Version;
 #[derive(Debug, thiserror::Error)]
 pub enum UninstallError {
     #[error("version {version} of {kind} is not installed")]
-    NotInstalled { kind: ToolchainKind, version: Version },
+    NotInstalled {
+        kind: ToolchainKind,
+        version: Version,
+    },
     #[error("cannot uninstall the currently active {kind} version {version}; switch first with `cln use {kind} <other>`")]
-    IsActive { kind: ToolchainKind, version: Version },
+    IsActive {
+        kind: ToolchainKind,
+        version: Version,
+    },
     #[error("io error while removing version: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -24,10 +30,16 @@ pub fn uninstall(
     version: &Version,
 ) -> Result<(), UninstallError> {
     if !layout.version_dir(kind, version).exists() {
-        return Err(UninstallError::NotInstalled { kind, version: version.clone() });
+        return Err(UninstallError::NotInstalled {
+            kind,
+            version: version.clone(),
+        });
     }
     if layout.active_version(kind).as_ref() == Some(version) {
-        return Err(UninstallError::IsActive { kind, version: version.clone() });
+        return Err(UninstallError::IsActive {
+            kind,
+            version: version.clone(),
+        });
     }
     layout.remove_version(kind, version)?;
     Ok(())

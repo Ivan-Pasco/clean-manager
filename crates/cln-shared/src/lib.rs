@@ -4,12 +4,12 @@
 //! subprocess argv shared between manager, framework, and compiler. Adding a
 //! type here is a coordination event — bump all three components together.
 
+pub mod channel;
 pub mod kind;
 pub mod platform;
-pub mod channel;
 
+pub use channel::{Compatibility, ReleaseEntry};
 pub use kind::ToolchainKind;
 pub use platform::Platform;
-pub use channel::{ReleaseEntry, Compatibility};
 
 pub use semver::{Version, VersionReq};

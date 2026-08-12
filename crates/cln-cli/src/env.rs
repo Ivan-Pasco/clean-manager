@@ -20,8 +20,13 @@ impl Env {
             })?
         };
         layout.ensure_base().context("preparing ~/.cln/ layout")?;
-        let platform = Platform::detect()
-            .ok_or_else(|| anyhow!("unsupported platform: {} {}", std::env::consts::OS, std::env::consts::ARCH))?;
+        let platform = Platform::detect().ok_or_else(|| {
+            anyhow!(
+                "unsupported platform: {} {}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )
+        })?;
         Ok(Self { layout, platform })
     }
 }

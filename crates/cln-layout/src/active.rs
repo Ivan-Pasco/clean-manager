@@ -18,9 +18,17 @@ use crate::paths::Layout;
 #[derive(Debug, thiserror::Error)]
 pub enum ActivateError {
     #[error("version {version} of {kind} is not installed at {expected}")]
-    NotInstalled { kind: ToolchainKind, version: Version, expected: PathBuf },
+    NotInstalled {
+        kind: ToolchainKind,
+        version: Version,
+        expected: PathBuf,
+    },
     #[error("io error while switching active {kind}: {source}")]
-    Io { kind: ToolchainKind, #[source] source: io::Error },
+    Io {
+        kind: ToolchainKind,
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl Layout {
@@ -36,8 +44,7 @@ impl Layout {
             });
         }
         let link = self.active_link(kind);
-        atomic_symlink_swap(&target, &link)
-            .map_err(|source| ActivateError::Io { kind, source })
+        atomic_symlink_swap(&target, &link).map_err(|source| ActivateError::Io { kind, source })
     }
 
     /// The version currently pointed at by `active/<kind>`, or `None` if the

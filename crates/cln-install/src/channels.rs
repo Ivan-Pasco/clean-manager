@@ -27,9 +27,17 @@ pub enum VersionSpec {
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelError {
     #[error("no release matching {spec:?} for {kind} on {platform}")]
-    NoMatch { kind: ToolchainKind, platform: Platform, spec: String },
+    NoMatch {
+        kind: ToolchainKind,
+        platform: Platform,
+        spec: String,
+    },
     #[error("no asset for platform {platform} in release {tag} of {repo}")]
-    NoAsset { repo: String, tag: String, platform: Platform },
+    NoAsset {
+        repo: String,
+        tag: String,
+        platform: Platform,
+    },
     #[error("missing SHA-256 sidecar for asset {asset} in release {tag}")]
     MissingChecksum { asset: String, tag: String },
     #[error("io error while listing releases: {0}")]
@@ -59,14 +67,15 @@ pub trait ReleaseSource {
     ) -> Result<ReleaseEntry, ChannelError> {
         let mut all = self.list(platform)?;
         match spec {
-            VersionSpec::Exact(want) => all
-                .into_iter()
-                .find(|e| &e.version == want)
-                .ok_or(ChannelError::NoMatch {
-                    kind: self.kind(),
-                    platform,
-                    spec: want.to_string(),
-                }),
+            VersionSpec::Exact(want) => {
+                all.into_iter()
+                    .find(|e| &e.version == want)
+                    .ok_or(ChannelError::NoMatch {
+                        kind: self.kind(),
+                        platform,
+                        spec: want.to_string(),
+                    })
+            }
             VersionSpec::Latest => {
                 all.retain(|e| e.version.pre.is_empty());
                 all.sort_by(|a, b| a.version.cmp(&b.version));
@@ -106,12 +115,17 @@ pub struct LocalDir {
 
 impl LocalDir {
     pub fn new(kind: ToolchainKind, root: impl Into<PathBuf>) -> Self {
-        Self { kind, root: root.into() }
+        Self {
+            kind,
+            root: root.into(),
+        }
     }
 }
 
 impl ReleaseSource for LocalDir {
-    fn kind(&self) -> ToolchainKind { self.kind }
+    fn kind(&self) -> ToolchainKind {
+        self.kind
+    }
 
     fn list(&self, platform: Platform) -> Result<Vec<ReleaseEntry>, ChannelError> {
         let mut out = Vec::new();
@@ -127,7 +141,9 @@ impl ReleaseSource for LocalDir {
             }
             let tag = entry.file_name();
             let Some(tag) = tag.to_str() else { continue };
-            let Ok(version) = Version::parse(tag) else { continue };
+            let Ok(version) = Version::parse(tag) else {
+                continue;
+            };
 
             match resolve_local_asset(&entry.path(), platform, tag)? {
                 Some((asset, sha)) => out.push(ReleaseEntry {
@@ -173,11 +189,10 @@ fn resolve_local_asset(
         p.set_file_name(sha_name);
         p
     };
-    let sha_text = fs::read_to_string(&sha_path)
-        .map_err(|_| ChannelError::MissingChecksum {
-            asset: asset.file_name().unwrap().to_string_lossy().into(),
-            tag: tag.into(),
-        })?;
+    let sha_text = fs::read_to_string(&sha_path).map_err(|_| ChannelError::MissingChecksum {
+        asset: asset.file_name().unwrap().to_string_lossy().into(),
+        tag: tag.into(),
+    })?;
     let sha = sha_text
         .split_whitespace()
         .next()
@@ -238,7 +253,9 @@ struct GhAsset {
 }
 
 impl ReleaseSource for GithubReleases {
-    fn kind(&self) -> ToolchainKind { self.kind }
+    fn kind(&self) -> ToolchainKind {
+        self.kind
+    }
 
     fn list(&self, platform: Platform) -> Result<Vec<ReleaseEntry>, ChannelError> {
         let url = format!(
@@ -264,7 +281,9 @@ impl ReleaseSource for GithubReleases {
             if rel.draft {
                 continue;
             }
-            let Some(version) = parse_tag(&rel.tag_name) else { continue };
+            let Some(version) = parse_tag(&rel.tag_name) else {
+                continue;
+            };
             let Some(asset) = rel.assets.iter().find(|a| platform.asset_matches(&a.name)) else {
                 continue;
             };
@@ -320,7 +339,10 @@ mod tests {
     use tempfile::tempdir;
 
     fn plat() -> Platform {
-        Platform { os: Os::Macos, arch: Arch::Arm64 }
+        Platform {
+            os: Os::Macos,
+            arch: Arch::Arm64,
+        }
     }
 
     fn seed_release(root: &Path, tag: &str, kind: ToolchainKind, platform: Platform) {
@@ -336,12 +358,18 @@ mod tests {
         let bytes = format!("payload for {tag}").into_bytes();
         std::fs::write(dir.join(&name), &bytes).unwrap();
         let sha = hex(Sha256::digest(&bytes).as_slice());
-        std::fs::write(dir.join(format!("{name}.sha256")), format!("{sha}  {name}\n")).unwrap();
+        std::fs::write(
+            dir.join(format!("{name}.sha256")),
+            format!("{sha}  {name}\n"),
+        )
+        .unwrap();
     }
 
     fn hex(bytes: &[u8]) -> String {
         let mut s = String::with_capacity(bytes.len() * 2);
-        for b in bytes { s.push_str(&format!("{b:02x}")); }
+        for b in bytes {
+            s.push_str(&format!("{b:02x}"));
+        }
         s
     }
 
@@ -365,12 +393,18 @@ mod tests {
     #[test]
     fn local_dir_ignores_wrong_platform() {
         let tmp = tempdir().unwrap();
-        let other = Platform { os: Os::Linux, arch: Arch::X86_64 };
+        let other = Platform {
+            os: Os::Linux,
+            arch: Arch::X86_64,
+        };
         seed_release(tmp.path(), "1.0.0", ToolchainKind::Compiler, other);
 
         let src = LocalDir::new(ToolchainKind::Compiler, tmp.path());
         let list = src.list(plat()).unwrap();
-        assert!(list.is_empty(), "should skip release with no matching asset");
+        assert!(
+            list.is_empty(),
+            "should skip release with no matching asset"
+        );
     }
 
     #[test]
@@ -392,7 +426,9 @@ mod tests {
 
         let src = LocalDir::new(ToolchainKind::Runtime, tmp.path());
         let want: Version = "2.1.0-rc.1".parse().unwrap();
-        let e = src.resolve(&VersionSpec::Exact(want.clone()), plat()).unwrap();
+        let e = src
+            .resolve(&VersionSpec::Exact(want.clone()), plat())
+            .unwrap();
         assert_eq!(e.version, want);
     }
 

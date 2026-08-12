@@ -95,7 +95,10 @@ mod tests {
 
     #[test]
     fn asset_matches_canonical_shape() {
-        let p = Platform { os: Os::Macos, arch: Arch::Arm64 };
+        let p = Platform {
+            os: Os::Macos,
+            arch: Arch::Arm64,
+        };
         assert!(p.asset_matches("clean-compiler-1.2.3-macos-arm64.tar.gz"));
         assert!(!p.asset_matches("clean-compiler-1.2.3-macos-x86_64.tar.gz"));
         assert!(!p.asset_matches("clean-compiler-1.2.3-linux-arm64.tar.gz"));
@@ -103,7 +106,10 @@ mod tests {
 
     #[test]
     fn windows_uses_zip() {
-        let p = Platform { os: Os::Windows, arch: Arch::X86_64 };
+        let p = Platform {
+            os: Os::Windows,
+            arch: Arch::X86_64,
+        };
         assert_eq!(p.archive_ext(), "zip");
         assert!(p.asset_matches("clean-runtime-2.0.0-windows-x86_64.zip"));
         assert!(!p.asset_matches("clean-runtime-2.0.0-windows-x86_64.tar.gz"));

@@ -8,8 +8,8 @@
 //! the only handle, it's rooted at a single directory, and every path
 //! accessor returns a child of that root.
 
+pub mod active;
 pub mod paths;
 pub mod versions;
-pub mod active;
 
 pub use paths::Layout;

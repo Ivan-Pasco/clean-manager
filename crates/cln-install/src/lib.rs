@@ -8,11 +8,11 @@
 //! Policy lives here — layout stays mechanical. In particular, `uninstall`
 //! refuses to remove the currently active version (Manager §00.3.3).
 
-pub mod repos;
 pub mod channels;
 pub mod download;
 pub mod extract;
 pub mod install;
+pub mod repos;
 pub mod uninstall;
 
 pub use channels::{GithubReleases, LocalDir, ReleaseSource, VersionSpec};

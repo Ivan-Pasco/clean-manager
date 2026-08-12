@@ -16,11 +16,23 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, thiserror::Error)]
 pub enum DownloadError {
     #[error("network error fetching {url}: {source}")]
-    Network { url: String, #[source] source: Box<ureq::Error> },
+    Network {
+        url: String,
+        #[source]
+        source: Box<ureq::Error>,
+    },
     #[error("io error writing to {path}: {source}")]
-    Io { path: PathBuf, #[source] source: io::Error },
+    Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("SHA-256 mismatch for {url}: expected {expected}, got {actual}")]
-    ChecksumMismatch { url: String, expected: String, actual: String },
+    ChecksumMismatch {
+        url: String,
+        expected: String,
+        actual: String,
+    },
     #[error("unsupported URL scheme for {0}")]
     UnsupportedScheme(String),
 }
@@ -90,7 +102,10 @@ fn stream_and_hash(url: &str, dest: &std::path::Path) -> Result<String, Download
         let resp = ureq::get(url)
             .set("User-Agent", "cln-manager")
             .call()
-            .map_err(|e| DownloadError::Network { url: url.into(), source: Box::new(e) })?;
+            .map_err(|e| DownloadError::Network {
+                url: url.into(),
+                source: Box::new(e),
+            })?;
         Box::new(resp.into_reader())
     } else {
         return Err(DownloadError::UnsupportedScheme(url.into()));
@@ -103,14 +118,20 @@ fn stream_and_hash(url: &str, dest: &std::path::Path) -> Result<String, Download
             path: dest.into(),
             source,
         })?;
-        if n == 0 { break }
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
-        file.write_all(&buf[..n]).map_err(|source| DownloadError::Io {
-            path: dest.into(),
-            source,
-        })?;
+        file.write_all(&buf[..n])
+            .map_err(|source| DownloadError::Io {
+                path: dest.into(),
+                source,
+            })?;
     }
-    file.flush().map_err(|source| DownloadError::Io { path: dest.into(), source })?;
+    file.flush().map_err(|source| DownloadError::Io {
+        path: dest.into(),
+        source,
+    })?;
 
     Ok(to_hex(&hasher.finalize()))
 }
@@ -121,7 +142,9 @@ fn hash_file(path: &std::path::Path) -> io::Result<String> {
     let mut buf = [0u8; 64 * 1024];
     loop {
         let n = f.read(&mut buf)?;
-        if n == 0 { break }
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     Ok(to_hex(&hasher.finalize()))
@@ -133,7 +156,9 @@ fn strip_file_url(url: &str) -> Option<PathBuf> {
 
 fn to_hex(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes { s.push_str(&format!("{b:02x}")); }
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
     s
 }
 
@@ -154,7 +179,10 @@ mod tests {
         ReleaseEntry {
             kind: ToolchainKind::Compiler,
             version: "1.0.0".parse().unwrap(),
-            platform: Platform { os: Os::Macos, arch: Arch::Arm64 },
+            platform: Platform {
+                os: Os::Macos,
+                arch: Arch::Arm64,
+            },
             asset_url: url.into(),
             asset_sha256: sha.into(),
             compatibility: None,

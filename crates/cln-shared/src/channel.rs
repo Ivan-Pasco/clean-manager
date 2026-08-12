@@ -43,7 +43,10 @@ mod tests {
         let entry = ReleaseEntry {
             kind: ToolchainKind::Compiler,
             version: "1.2.3".parse().unwrap(),
-            platform: Platform { os: Os::Macos, arch: Arch::Arm64 },
+            platform: Platform {
+                os: Os::Macos,
+                arch: Arch::Arm64,
+            },
             asset_url: "https://example.test/asset.tar.gz".into(),
             asset_sha256: "deadbeef".into(),
             compatibility: Some(Compatibility {
@@ -62,13 +65,18 @@ mod tests {
         let entry = ReleaseEntry {
             kind: ToolchainKind::Runtime,
             version: "0.1.0".parse().unwrap(),
-            platform: Platform { os: Os::Linux, arch: Arch::X86_64 },
+            platform: Platform {
+                os: Os::Linux,
+                arch: Arch::X86_64,
+            },
             asset_url: "u".into(),
             asset_sha256: "s".into(),
             compatibility: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
-        assert!(!json.contains("compatibility"),
-            "None compatibility should be skipped in output, got: {json}");
+        assert!(
+            !json.contains("compatibility"),
+            "None compatibility should be skipped in output, got: {json}"
+        );
     }
 }
