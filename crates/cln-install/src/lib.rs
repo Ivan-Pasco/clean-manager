@@ -11,10 +11,12 @@
 pub mod channels;
 pub mod download;
 pub mod extract;
+pub mod hostwit;
 pub mod install;
 pub mod repos;
 pub mod uninstall;
 
 pub use channels::{GithubReleases, LocalDir, ReleaseSource, VersionSpec};
+pub use hostwit::{seed_all as seed_host_wit, Contract, SeedError, Seeded};
 pub use install::{install, InstallError, InstallOutcome};
 pub use uninstall::{uninstall, UninstallError};

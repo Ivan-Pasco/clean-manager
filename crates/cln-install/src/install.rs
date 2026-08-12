@@ -6,6 +6,7 @@ use cln_shared::{Platform, ToolchainKind};
 use crate::channels::{ChannelError, ReleaseSource, VersionSpec};
 use crate::download::{fetch, DownloadError};
 use crate::extract::{extract_archive, ExtractError};
+use crate::hostwit::{self, SeedError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
@@ -17,6 +18,8 @@ pub enum InstallError {
     Extract(#[from] ExtractError),
     #[error(transparent)]
     Activate(#[from] ActivateError),
+    #[error(transparent)]
+    Seed(#[from] SeedError),
     #[error("io error preparing install: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -35,6 +38,11 @@ pub struct InstallOutcome {
 /// Install `spec` for the given `source`. Idempotent: if the version is
 /// already installed, we skip download+extract. When `activate` is true, the
 /// active symlink is pointed at the resulting version.
+///
+/// Also seeds `~/.cln/host-wit/` so the first `cln build` works offline (C-18).
+/// Host contracts are toolchain-wide rather than per-kind, so seeding is
+/// unconditional here and idempotent — a caller installing several kinds may
+/// call [`hostwit::seed_all`] once up front to report it once.
 pub fn install(
     layout: &Layout,
     source: &dyn ReleaseSource,
@@ -43,6 +51,7 @@ pub fn install(
     activate: bool,
 ) -> Result<InstallOutcome, InstallError> {
     layout.ensure_base()?;
+    hostwit::seed_all(layout)?;
 
     let entry = source.resolve(spec, platform)?;
     let kind = entry.kind;
@@ -165,6 +174,38 @@ mod tests {
             resolved,
             layout.version_dir(ToolchainKind::Compiler, &outcome.version)
         );
+    }
+
+    #[test]
+    fn install_seeds_the_host_wit_cache() {
+        let releases = tempdir().unwrap();
+        seed_release_dir(
+            releases.path(),
+            ToolchainKind::Compiler,
+            "1.0.0",
+            plat(),
+            b"compiler-1.0.0",
+        );
+
+        let home = tempdir().unwrap();
+        let layout = Layout::new(home.path().join(".cln"));
+        let source = LocalDir::new(ToolchainKind::Compiler, releases.path());
+
+        install(&layout, &source, &VersionSpec::Latest, plat(), true).unwrap();
+
+        // Every shipped contract is on disk, byte-identical, at the path the
+        // framework's HostWitCache looks for.
+        for c in crate::hostwit::CONTRACTS {
+            let path = layout
+                .host_wit_dir()
+                .join(format!("{}@{}.wit", c.host, c.version));
+            assert_eq!(
+                fs::read(&path).unwrap(),
+                c.wit.as_bytes(),
+                "{} not seeded",
+                c.host
+            );
+        }
     }
 
     #[test]

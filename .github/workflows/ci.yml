@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: test / clippy / fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: test
+        run: cargo test --locked
+
+  vendored-wit:
+    name: vendored host contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The upstream comparison needs clean-server's tags. Without this the
+      # script still runs the local pin check and reports the upstream leg as
+      # skipped rather than passing it silently.
+      - name: check out clean-server
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: Ivan-Pasco/clean-server
+          path: .upstream/clean-server
+          fetch-depth: 0
+
+      - name: check vendored contracts against pins and upstream
+        env:
+          CLEAN_SERVER_DIR: ${{ github.workspace }}/.upstream/clean-server
+        run: ./scripts/check_vendored_wit.sh

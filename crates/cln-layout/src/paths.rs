@@ -68,8 +68,19 @@ impl Layout {
         self.cache_dir().join("downloads")
     }
 
+    /// `~/.cln/host-wit/` — cached host contracts, per Manager §00.2.
+    ///
+    /// Distinct from `~/.cln/wit-cache/`, which Manager §00.2 also lists and
+    /// which holds WIT synthesized from library declarations. This directory
+    /// holds only `host.wit` files published by hosts, one per
+    /// `<host>@<version>.wit`, byte-identical to what the host published.
+    pub fn host_wit_dir(&self) -> PathBuf {
+        self.root.join("host-wit")
+    }
+
     /// Create the base directories that every M0 command assumes exist:
-    /// root, bin, versions/{compiler,framework,runtime}, active, cache/downloads.
+    /// root, bin, versions/{compiler,framework,runtime}, active,
+    /// cache/downloads, host-wit.
     ///
     /// Idempotent — safe to call on every CLI invocation.
     pub fn ensure_base(&self) -> io::Result<()> {
@@ -80,6 +91,7 @@ impl Layout {
         }
         std::fs::create_dir_all(self.active_root())?;
         std::fs::create_dir_all(self.downloads_dir())?;
+        std::fs::create_dir_all(self.host_wit_dir())?;
         Ok(())
     }
 }
@@ -97,6 +109,7 @@ mod tests {
         assert!(l.versions_root().starts_with(tmp.path()));
         assert!(l.active_root().starts_with(tmp.path()));
         assert!(l.cache_dir().starts_with(tmp.path()));
+        assert!(l.host_wit_dir().starts_with(tmp.path()));
         for k in ToolchainKind::ALL {
             assert!(l.versions_dir(k).starts_with(tmp.path()));
             assert!(l.active_link(k).starts_with(tmp.path()));
@@ -113,6 +126,7 @@ mod tests {
         assert!(l.bin_dir().is_dir());
         assert!(l.active_root().is_dir());
         assert!(l.downloads_dir().is_dir());
+        assert!(l.host_wit_dir().is_dir());
         for k in ToolchainKind::ALL {
             assert!(l.versions_dir(k).is_dir(), "versions/{} should exist", k);
         }

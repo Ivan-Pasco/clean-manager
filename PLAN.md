@@ -59,6 +59,7 @@ clean-manager/
 │   │       ├── active.rs               # ~/.cln/active/ symlink management
 │   │       ├── plugins.rs              # ~/.cln/plugins/<name>/<version>/
 │   │       ├── caches.rs               # ~/.cln/cache/, ~/.cln/wit-cache/, ~/.cln/build-cache/
+│   │                                   #   NOT ~/.cln/host-wit/ — see "Host contract seeding" below
 │   │       └── config.rs               # ~/.cln/config.toml (manager's own state)
 │   │
 │   ├── cln-project/                    # per-project .cln/ under user's projects
@@ -179,6 +180,41 @@ clean-manager/
 | §00.8 framework interaction (`cln fetch --internal`) | `cln-dispatch::framework`, `cln-resolver` |
 | §00.10 telemetry | `cln-telemetry` |
 | Architecture Boundaries §2.3 (what manager MUST NOT do) | Enforced by module topology — no `cln-*` crate depends on any parser/codegen/wasm-runtime crate |
+
+### Host contract seeding (`~/.cln/host-wit/`)
+
+`cln install` writes the host contracts it ships into `~/.cln/host-wit/`, one
+file per `<host>@<version>.wit`. Implemented in `cln-install::hostwit`; the path
+accessor is `Layout::host_wit_dir()`.
+
+**This is not `wit-cache/`.** Manager §00.2 lists both directories and they hold
+different things: `wit-cache/` holds WIT *synthesized from library declarations*
+and belongs to `cln-layout::caches`; `host-wit/` holds `host.wit` files
+*published by hosts*, byte-for-byte. Do not merge them.
+
+**Why seeded rather than fetched.** C-18 promises every command works offline. A
+project's first `cln build` must validate the guest against the target host's
+contract, and on a cold cache there is nothing to read. The contracts are
+therefore embedded in the binary with `include_str!` and land on disk at install
+time. Fetching at install would move the network round trip earlier without
+removing it.
+
+**Not a boundary violation.** Writing a text file the manager ships is version
+management, not framework logic — nothing here parses `.cln`, reads project
+folders, or generates code. Likewise, publishing `hosts/<host>/host.wit` for a
+host *this repo owns* is a host declaring its own contract (HCV-02), not the
+manager reimplementing framework behavior.
+
+**No `clean-cli` contract yet.** HCV-06 makes a declared-but-unimplemented
+interface a hard failure, and no CLI host implements `clean:host@0.1.0` today —
+`clean-runtime` is a name in `ToolchainKind` and a repo reference with nothing
+behind it. `hosts/clean-cli/host.wit` gets published, and a `clean-cli` entry
+gets added to `CONTRACTS`, when that binary exists. Until then `wasm32-cli`
+stays blocked.
+
+The vendored contracts under `crates/cln-install/vendor/host-wit/` are copies of
+files other repos own. `scripts/check_vendored_wit.sh` (run by CI) fails when
+they drift from either their pinned hash or upstream at the pinned tag.
 
 ---
 

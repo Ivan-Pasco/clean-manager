@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
-use cln_install::{install as do_install, uninstall as do_uninstall, VersionSpec};
+use cln_install::{install as do_install, seed_host_wit, uninstall as do_uninstall, VersionSpec};
 use cln_shared::ToolchainKind;
 use semver::Version;
 
@@ -95,6 +95,18 @@ pub fn install(args: InstallArgs, env: &Env) -> Result<()> {
     let (kind_arg, version) = resolve_install_positionals(&args.positionals)?;
     let spec = parse_spec(&version)?;
     let activate = !args.no_activate;
+
+    // Host contracts are toolchain-wide, not per-kind — seed once here rather
+    // than letting a bare `cln install` report the same three files three
+    // times. `do_install` seeds too (idempotently), so library callers that
+    // bypass this verb still get a warm cache.
+    env.layout.ensure_base().context("preparing ~/.cln")?;
+    for c in seed_host_wit(&env.layout).context("seeding host contracts")? {
+        if !c.already_present {
+            println!("seeded host contract {}", c.label());
+        }
+    }
+
     for kind in kinds_from(kind_arg) {
         let source = release_source_for(kind);
         let outcome = do_install(&env.layout, source.as_ref(), &spec, env.platform, activate)

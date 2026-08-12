@@ -1,0 +1,296 @@
+// clean-server — the host contract.
+//
+// HCV-02 (Platform 16 §16.5): this file at the repository root is the
+// authoritative declaration of what this host provides. There is no parallel
+// manifest. The framework fetches it for its Moment 1 check, `cln check` uses
+// it at Moment 2, and clean-server itself compares a guest's embedded WIT
+// against it at Moment 3 before instantiating.
+//
+// HCV-06 (§16.14): CI verifies that every interface declared here is really
+// registered by the server's wasmtime Linker, and that nothing is registered
+// that is not declared here. A no-op or throwing stub under a declared name is
+// a hard failure — the correct response to an unimplemented interface is to
+// omit it from this file.
+//
+// SCOPE: the interfaces clean-server actually implements today — the HTTP
+// surface (routing, request, response, websocket, sse) plus the two host-side
+// envelopes (session/http-envelope, realtime/sockets). `clean:host/admin` lands
+// in Phase 4 and is added here when it is implemented, never before.
+//
+// The envelopes are declared in this package rather than in clean:session /
+// clean:realtime because host.wit describes what THIS host provides. The
+// canonical vocabulary lives in the bridge specs; these declarations must stay
+// signature-identical to them (HCV-03).
+
+package clean:host@0.1.0;
+
+/// Route registration. The guest declares which method/path pairs it handles;
+/// clean-server matches incoming requests against them.
+interface routing {
+    /// An HTTP method a route can be registered for.
+    enum method {
+        get,
+        head,
+        post,
+        put,
+        patch,
+        delete,
+        options,
+    }
+
+    /// Per-route options.
+    record options {
+        /// Whether CSRF validation applies to this route (§1.7).
+        ///
+        /// True by default. A route sets it false only when it has another
+        /// way to authenticate the caller — a webhook verifying an HMAC
+        /// signature, say — because a browser-originated form has no such
+        /// alternative.
+        csrf: bool,
+    }
+
+    /// Register one route. Called by the guest at startup.
+    register: func(m: method, path: string, handler-id: u32, opts: options);
+}
+
+/// The incoming request, as seen by the guest.
+interface request {
+    /// A single header. Names are lowercased by the server.
+    record header {
+        name: string,
+        value: string,
+    }
+
+    /// The request line and metadata.
+    record parts {
+        method: string,
+        path: string,
+        query: string,
+        /// Peer address as seen by the server, or as reported by a trusted
+        /// proxy when `[server] trust-proxy-headers` is set.
+        peer: string,
+        /// Correlation id, generated per request when the client did not
+        /// supply one.
+        correlation-id: string,
+    }
+
+    /// Everything about the request line and metadata.
+    get-parts: func() -> parts;
+
+    /// All request headers.
+    get-headers: func() -> list<header>;
+
+    /// One header by (lowercase) name.
+    get-header: func(name: string) -> option<string>;
+
+    /// The request body. Bounded by `[server] body-max-bytes`.
+    get-body: func() -> list<u8>;
+
+    /// Path parameters captured by the matched route: `/users/:id` matched
+    /// against `/users/42` yields `[("id", "42")]`. Values are exactly as they
+    /// appeared in the path — percent-decoding is the guest's choice, since
+    /// decoding early would make `%2F` indistinguishable from a separator.
+    get-params: func() -> list<header>;
+
+    /// One path parameter by name.
+    get-param: func(name: string) -> option<string>;
+}
+
+/// The response the guest produces.
+interface response {
+    record header {
+        name: string,
+        value: string,
+    }
+
+    /// Set the status code. Defaults to 200 when never called.
+    set-status: func(status: u16);
+
+    /// Append a response header. Repeated names are preserved in order, which
+    /// `set-cookie` depends on.
+    add-header: func(name: string, value: string);
+
+    /// Set the response body, replacing anything set previously.
+    set-body: func(body: list<u8>);
+}
+
+/// WebSocket upgrade and lifecycle (§1.3.1).
+///
+/// The guest decides during a normal request whether to accept an upgrade. The
+/// server owns the wire: the handshake, the per-socket outbound queue bounded
+/// by `[server] socket-queue-max`, and the close. Fan-out across nodes is the
+/// realtime bridge's job, not this interface's.
+interface websocket {
+    /// Why a socket closed, or why an upgrade was refused.
+    enum socket-error {
+        /// The request was not a WebSocket upgrade.
+        not-an-upgrade,
+        /// The per-socket outbound queue is full; the message was not queued.
+        socket-slow,
+        /// The socket is no longer open.
+        closed,
+    }
+
+    /// Accept the pending upgrade for this request.
+    ///
+    /// Returns a socket id the guest uses for subsequent sends. Fails with
+    /// `not-an-upgrade` when the request carried no valid upgrade headers.
+    accept: func() -> result<u64, socket-error>;
+
+    /// Queue a text message for delivery on a socket.
+    ///
+    /// Non-blocking: returns `socket-slow` rather than waiting when the
+    /// outbound queue is full, so one slow client cannot stall the guest.
+    send-text: func(socket: u64, message: string) -> result<_, socket-error>;
+
+    /// Queue a binary message for delivery on a socket.
+    send-binary: func(socket: u64, message: list<u8>) -> result<_, socket-error>;
+
+    /// Approximate bytes queued but not yet written, for backpressure
+    /// decisions the guest wants to make itself.
+    queued-bytes: func(socket: u64) -> u64;
+
+    /// Close a socket with a WebSocket close code.
+    close: func(socket: u64, code: u16, reason: string) -> result<_, socket-error>;
+}
+
+/// Server-Sent Events (§1.3.1).
+///
+/// SSE is a response mode rather than a separate connection: the guest starts
+/// a stream on the current request and the server holds the response open,
+/// framing events and emitting keep-alive comments.
+interface sse {
+    enum stream-error {
+        /// A response body was already set, so it cannot become a stream.
+        response-already-started,
+        /// The client disconnected.
+        closed,
+    }
+
+    /// Turn the current response into an SSE stream.
+    ///
+    /// Returns a stream id. The server sets `content-type: text/event-stream`
+    /// and disables buffering.
+    start: func() -> result<u64, stream-error>;
+
+    /// Send one event. An empty `event-type` emits a default `message` event;
+    /// an empty `id` omits the id field.
+    send: func(handle: u64, event-type: string, data: string, id: string)
+        -> result<_, stream-error>;
+
+    /// Ask the client to wait this long before reconnecting.
+    set-retry: func(handle: u64, millis: u32) -> result<_, stream-error>;
+
+    /// Close the stream and end the response.
+    close: func(handle: u64) -> result<_, stream-error>;
+}
+
+/// Host-side session envelope (§1.5.1).
+///
+/// Cookies and CSRF can only be handled by whatever holds the unflushed
+/// response, so the host implements this while the session *store* comes from
+/// a composed bridge. Mirrors `clean:session/http-envelope` in the
+/// session-bridge schema.
+interface session-envelope {
+    variant envelope-error {
+        /// Called outside an HTTP request context.
+        no-active-request,
+        /// Response headers were already flushed.
+        header-locked,
+        invalid-cookie-name,
+        invalid-cookie-value,
+    }
+
+    variant same-site { strict, lax, none }
+
+    record cookie-options {
+        path:         option<string>,
+        domain:       option<string>,
+        max-age-secs: option<u32>,
+        http-only:    bool,
+        secure:       bool,
+        same-site:    option<same-site>,
+    }
+
+    /// Emit a Set-Cookie header on the current response.
+    ///
+    /// The server applies its own floors regardless of what is passed:
+    /// HttpOnly is always set, and Secure follows `[server] cookie-secure`.
+    set-cookie: func(name: string, value: string, options: cookie-options)
+        -> result<_, envelope-error>;
+
+    /// Bind a CSRF token to the active session.
+    set-csrf: func(token: string) -> result<_, envelope-error>;
+
+    /// Read the CSRF token for the active session, if any.
+    get-csrf: func() -> option<string>;
+
+    /// Read a cookie off the current request.
+    read-cookie: func(name: string) -> option<string>;
+}
+
+/// Host-side realtime envelope (§1.5.2).
+///
+/// How a caller hands bytes to a live connection the host owns. Mirrors
+/// `clean:realtime/sockets` in the realtime-bridge schema; the realtime bridge
+/// imports this so it can fan out to sockets it does not itself hold.
+interface realtime-sockets {
+    variant socket-error {
+        /// The per-socket outbound queue is full.
+        socket-slow,
+        /// The socket is no longer open.
+        closed,
+    }
+
+    /// Write to a live socket, identified by subscriber id.
+    ///
+    /// Non-blocking: returns `socket-slow` rather than waiting, so a slow
+    /// subscriber cannot stall the caller.
+    deliver: func(socket: u64, payload: list<u8>) -> result<_, socket-error>;
+
+    /// Force-close a live socket.
+    close: func(socket: u64, code: u16, reason: string) -> result<_, socket-error>;
+
+    /// Approximate outgoing queue depth, for backpressure decisions.
+    queued-bytes: func(socket: u64) -> u64;
+}
+
+/// Structured logging for guests and bridges (clean-host-core §7.2).
+///
+/// Distinct from `wasi:logging`, which stays available for printf-style
+/// output: records here carry fields and are attributed to the component that
+/// emitted them, which is what makes them useful after the fact.
+interface log {
+    enum level { trace, debug, info, warn, error }
+
+    record field {
+        key:   string,
+        value: string,
+    }
+
+    /// Emit a structured record. Routed to the host's log sink.
+    emit: func(l: level, message: string, fields: list<field>);
+}
+
+/// The world clean-server fulfills.
+///
+/// The server exports the HTTP surface it owns (§1.3.1) and imports the
+/// guest's entry point. `clean:host/*` and the WASI 0.3 stack are provided by
+/// clean-host-core to every composed component (CH-03) and are not restated
+/// here.
+world server {
+    export routing;
+    export request;
+    export response;
+    export websocket;
+    export sse;
+    export session-envelope;
+    export realtime-sockets;
+    export log;
+
+    /// Invoked once at startup so the guest can register its routes.
+    import init: func();
+
+    /// Invoked per request, with the handler id the guest registered.
+    import handle: func(handler-id: u32);
+}
