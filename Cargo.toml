@@ -4,7 +4,10 @@ members = [
     "crates/cln-shared",
     "crates/cln-layout",
     "crates/cln-install",
+    "crates/cln-project",
+    "crates/cln-dispatch",
     "crates/cln-cli",
+    "testing/fake-framework",
 ]
 
 [workspace.package]
@@ -18,6 +21,8 @@ repository = "https://github.com/Ivan-Pasco/clean-manager"
 cln-shared = { path = "crates/cln-shared" }
 cln-layout = { path = "crates/cln-layout" }
 cln-install = { path = "crates/cln-install" }
+cln-project = { path = "crates/cln-project" }
+cln-dispatch = { path = "crates/cln-dispatch" }
 
 anyhow = "1"
 thiserror = "1"

@@ -153,10 +153,28 @@ version = "0.1.5"
 dependencies = [
  "anyhow",
  "clap",
+ "cln-dispatch",
  "cln-install",
  "cln-layout",
+ "cln-project",
  "cln-shared",
  "semver",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "cln-dispatch"
+version = "0.1.5"
+dependencies = [
+ "cln-layout",
+ "cln-project",
+ "cln-shared",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -179,6 +197,16 @@ dependencies = [
 
 [[package]]
 name = "cln-layout"
+version = "0.1.5"
+dependencies = [
+ "cln-shared",
+ "semver",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "cln-project"
 version = "0.1.5"
 dependencies = [
  "cln-shared",
@@ -267,6 +295,10 @@ dependencies = [
  "libc",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "fake-framework"
+version = "0.1.5"
 
 [[package]]
 name = "fastrand"

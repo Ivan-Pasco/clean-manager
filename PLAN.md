@@ -263,12 +263,37 @@ Every phase is a working system. No half-implementations.
 - `cln uninstall`, `cln available`, `cln list`.
 - **The M0 milestone is:** run `cln install compiler <v> && cln install framework <v> && cln install runtime <v>` from a fresh `~/.cln/` and end up with three working symlinks. No project, no build yet.
 
-**Phase 2 — Project pins + dispatch.**
+**Phase 2 — Project pins + dispatch.** *Shipped, except as noted.*
 
-- `cln-project`: locate project root, read/write `.cln/version`, `.cln/frame-version`, `.cln/runtime-version`.
-- `cln pin <version>` writes all three; `cln sync` reads them and calls `cln install` for anything missing.
-- `cln-dispatch`: resolve which framework binary to launch (per-project pin overrides global active), spawn it with the argv the user typed (minus the `cln` prefix), stream stdout/stderr, propagate exit code.
-- `cln build` and `cln dev` now dispatch to framework. Framework doesn't have to work yet — testing uses `fake-framework` binary that echoes args and exits 0.
+- `cln-project`: locate project root, read/write `.cln/version`, `.cln/frame-version`, `.cln/runtime-version`. ✅
+- `cln pin <version>` writes all three; `cln sync` reads them and calls `cln install` for anything missing. — *deferred; `cln-project::pins` has the read/write half, the verbs are not wired.*
+- `cln-dispatch`: resolve which framework binary to launch (per-project pin overrides global active), spawn it with the argv the user typed (minus the `cln` prefix), stream stdout/stderr, propagate exit code. ✅
+- `cln build` and `cln package` dispatch to framework, verified against both `testing/fake-framework` and the real `clean-framework` 0.1.1. ✅
+
+**What `cln dev` turned into.** `clean-framework` 0.1.1 ships exactly two verbs,
+`build` and `package`. There is no `dev`, so routing it would produce a bare
+clap exit-2 with no explanation. It is absent from `cln-dispatch::table::ROUTES`
+until the framework ships it; adding it then is one entry in that table.
+`package` was added in its place — it already exists framework-side and produces
+the `.clapp` that Phase 4's `cln run` consumes.
+
+**Diagnostic rendering, as built.** §3 makes manager the single diagnostic
+renderer, but `clean-framework` 0.1.1 also prints its diagnostics to stderr on
+the way out. Rendering the envelope's copy on top of that shows every error
+twice, so `cln build` prints the component's stderr plus a one-line outcome
+summary, and `--verbose` opts into manager's richer structured rendering
+(spans, labels, doc URLs). `--json` emits the component's envelope untouched for
+Cloud and CI. When the framework grows a flag to suppress its own rendering,
+manager's becomes the default.
+
+**Known cross-component gap: `CLN_HOME`.** `cln-cli` honors `CLN_HOME` to
+relocate `~/.cln/`, but `cln-layout::Layout::from_home` reads `$HOME` only. The
+framework resolves its compiler through `from_home`, so a dispatched build
+ignores `CLN_HOME` and looks under `$HOME/.cln/` regardless. Manager's own
+integration tests are unaffected (they use a fake framework that resolves no
+compiler), but any test driving the real framework must set `HOME`, not
+`CLN_HOME`. Fixing it properly means teaching `from_home` about the override, in
+`cln-layout` — which both components depend on.
 
 **Phase 3 — Dependency resolution (path + git only).**
 
