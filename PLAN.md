@@ -286,14 +286,28 @@ summary, and `--verbose` opts into manager's richer structured rendering
 Cloud and CI. When the framework grows a flag to suppress its own rendering,
 manager's becomes the default.
 
-**Known cross-component gap: `CLN_HOME`.** `cln-cli` honors `CLN_HOME` to
-relocate `~/.cln/`, but `cln-layout::Layout::from_home` reads `$HOME` only. The
-framework resolves its compiler through `from_home`, so a dispatched build
-ignores `CLN_HOME` and looks under `$HOME/.cln/` regardless. Manager's own
-integration tests are unaffected (they use a fake framework that resolves no
-compiler), but any test driving the real framework must set `HOME`, not
-`CLN_HOME`. Fixing it properly means teaching `from_home` about the override, in
-`cln-layout` — which both components depend on.
+**`CLN_HOME` is resolved in `cln-layout`.** ✅ `Layout::from_home` honors
+`CLN_HOME` before falling back to `$HOME/.cln/`, and `cln-cli` no longer carries
+its own copy of the rule. The override has to live in the shared crate because
+the framework calls `from_home` directly to resolve the compiler a project pins
+— an override applied only in the CLI would be invisible to the build it
+dispatched, so one command would resolve its toolchain from two different roots.
+The framework picks this up through its path dependency with no change of its
+own; verified by building a project with `HOME` pointed at an empty directory
+and the toolchain reachable only via `CLN_HOME`.
+
+`CLN_HOME` names the layout root itself — no `.cln` is appended — which is how
+the CLI already treated it. An empty value counts as unset.
+
+**Still reading `$HOME`: the framework's host-contract cache.**
+`framework-core::HostWitCache::user()` resolves `~/.cln/host-wit/` through a
+private `home_dir()` helper rather than `Layout::host_wit_dir()`, so it does not
+see `CLN_HOME`. A build against a relocated root therefore resolves its compiler
+correctly and then fails with `FRM004` looking for host contracts under `$HOME`.
+That code is framework-owned; the fix is for it to route through `cln-layout`
+like the compiler resolver does, which would also delete the duplicate helper.
+Until then, a relocated toolchain needs `--host-wit-cache` passed explicitly, or
+`HOME` set alongside `CLN_HOME`.
 
 **Phase 3 — Dependency resolution (path + git only).**
 

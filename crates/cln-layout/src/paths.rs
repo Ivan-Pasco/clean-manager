@@ -17,13 +17,28 @@ impl Layout {
         Self { root: root.into() }
     }
 
-    /// Locate the user's `~/.cln/` from `$HOME`. Returns `None` if HOME isn't
-    /// set — the CLI turns that into a diagnostic; the library does not panic.
+    /// Locate the toolchain root: `$CLN_HOME` when set, otherwise `~/.cln/`.
+    /// Returns `None` when neither variable is usable — the CLI turns that into
+    /// a diagnostic; the library does not panic.
+    ///
+    /// **`CLN_HOME` is the layout root itself, not a home directory.** It is
+    /// used verbatim, with no `.cln` appended, so `CLN_HOME=/srv/toolchain`
+    /// puts versions at `/srv/toolchain/versions/`. That matches how the CLI
+    /// has always treated the variable.
+    ///
+    /// The override lives here rather than in `cln-cli` because every process
+    /// that resolves a toolchain has to agree on the answer. The framework
+    /// calls this function directly to find the compiler a project pins, so an
+    /// override applied only in the CLI would be invisible to the build it
+    /// dispatched — the toolchain would resolve from two different roots in one
+    /// command. Operators provisioning a toolchain outside a service account's
+    /// home (Clean Cloud builds projects this way) depend on the whole chain
+    /// honoring one root.
     pub fn from_home() -> Option<Self> {
-        let home = std::env::var_os("HOME")?;
-        if home.is_empty() {
-            return None;
+        if let Some(root) = std::env::var_os("CLN_HOME").filter(|v| !v.is_empty()) {
+            return Some(Self::new(PathBuf::from(root)));
         }
+        let home = std::env::var_os("HOME").filter(|v| !v.is_empty())?;
         Some(Self::new(PathBuf::from(home).join(".cln")))
     }
 
@@ -100,6 +115,120 @@ impl Layout {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    /// `from_home` reads process-global environment, so the tests that set
+    /// `CLN_HOME` and `HOME` have to take turns. Cargo runs tests in threads of
+    /// one process, so without this they race and read each other's values.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Run `f` with `CLN_HOME` and `HOME` set to the given values, restoring
+    /// whatever was there before — including for a panicking `f`, since the
+    /// lock would otherwise stay poisoned for every later test.
+    fn with_env<T>(cln_home: Option<&Path>, home: Option<&Path>, f: impl FnOnce() -> T) -> T {
+        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let prev_cln = std::env::var_os("CLN_HOME");
+        let prev_home = std::env::var_os("HOME");
+
+        // SAFETY: the lock above serializes every writer in this module, and
+        // these tests are the only ones in the crate that touch these vars.
+        unsafe {
+            apply("CLN_HOME", cln_home);
+            apply("HOME", home);
+        }
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+
+        unsafe {
+            restore("CLN_HOME", prev_cln);
+            restore("HOME", prev_home);
+        }
+        drop(guard);
+
+        match result {
+            Ok(v) => v,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+
+    unsafe fn apply(key: &str, value: Option<&Path>) {
+        match value {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    unsafe fn restore(key: &str, value: Option<std::ffi::OsString>) {
+        match value {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    /// The regression test for the cross-component bug: the framework resolves
+    /// its compiler through `from_home`, so an override honored only in the CLI
+    /// left a dispatched build reading a different root than the command that
+    /// spawned it.
+    #[test]
+    fn cln_home_overrides_the_home_directory() {
+        let cln_home = tempdir().unwrap();
+        let home = tempdir().unwrap();
+
+        let layout = with_env(Some(cln_home.path()), Some(home.path()), || {
+            Layout::from_home().expect("CLN_HOME should resolve a layout")
+        });
+
+        assert_eq!(layout.root(), cln_home.path());
+        assert_ne!(layout.root(), home.path().join(".cln"));
+    }
+
+    /// `CLN_HOME` names the layout root itself — no `.cln` is appended, so it
+    /// agrees with `Layout::new` and with how the CLI already treated it.
+    #[test]
+    fn cln_home_is_the_root_itself_not_a_home_directory() {
+        let cln_home = tempdir().unwrap();
+
+        let layout = with_env(Some(cln_home.path()), None, || Layout::from_home().unwrap());
+
+        assert_eq!(layout.root(), cln_home.path());
+        assert_eq!(
+            layout.versions_root(),
+            cln_home.path().join("versions"),
+            "versions must sit directly under CLN_HOME"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_home_when_cln_home_is_unset() {
+        let home = tempdir().unwrap();
+
+        let layout = with_env(None, Some(home.path()), || Layout::from_home().unwrap());
+
+        assert_eq!(layout.root(), home.path().join(".cln"));
+    }
+
+    /// An empty value is treated as unset rather than as the root `""`, which
+    /// would otherwise resolve every path to a relative one.
+    #[test]
+    fn an_empty_cln_home_falls_back_to_home() {
+        let home = tempdir().unwrap();
+
+        let layout = with_env(Some(Path::new("")), Some(home.path()), || {
+            Layout::from_home().unwrap()
+        });
+
+        assert_eq!(layout.root(), home.path().join(".cln"));
+    }
+
+    #[test]
+    fn no_cln_home_and_no_home_resolves_to_nothing() {
+        assert!(with_env(None, None, Layout::from_home).is_none());
+    }
+
+    #[test]
+    fn an_empty_home_is_treated_as_unset() {
+        assert!(with_env(None, Some(Path::new("")), Layout::from_home).is_none());
+    }
 
     #[test]
     fn paths_are_all_under_root() {

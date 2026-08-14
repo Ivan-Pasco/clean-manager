@@ -12,13 +12,12 @@ pub struct Env {
 
 impl Env {
     pub fn detect() -> Result<Self> {
-        let layout = if let Ok(override_path) = std::env::var("CLN_HOME") {
-            Layout::new(override_path)
-        } else {
-            Layout::from_home().ok_or_else(|| {
-                anyhow!("HOME is not set; cannot locate ~/.cln/ (set CLN_HOME to override)")
-            })?
-        };
+        // `CLN_HOME` is handled inside `from_home` rather than here, so that
+        // every process resolving a toolchain — including the framework binary
+        // this CLI dispatches to — agrees on one root.
+        let layout = Layout::from_home().ok_or_else(|| {
+            anyhow!("HOME is not set; cannot locate ~/.cln/ (set CLN_HOME to override)")
+        })?;
         layout.ensure_base().context("preparing ~/.cln/ layout")?;
         let platform = Platform::detect().ok_or_else(|| {
             anyhow!(
