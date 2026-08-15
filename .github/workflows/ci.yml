@@ -29,8 +29,18 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
+      # The dispatch tests run the real `cln` against `testing/fake-framework`,
+      # copying its `clean-framework` binary into a temp toolchain. That binary
+      # has to be built explicitly: `cargo test` builds the binaries of crates
+      # it *tests*, and fake-framework is bin-only with no tests of its own, so
+      # neither `--workspace` nor `--all-targets` produces it. Skipping this
+      # leaves the suite green on any machine where an earlier build happened to
+      # leave the artifact in target/, and red on a clean checkout like CI.
+      - name: build test doubles
+        run: cargo build --locked -p fake-framework
+
       - name: test
-        run: cargo test --locked
+        run: cargo test --locked --workspace
 
   vendored-wit:
     name: vendored host contracts
