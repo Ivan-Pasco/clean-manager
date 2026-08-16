@@ -261,18 +261,32 @@ fn register_impl(
 #[cfg(target_os = "macos")]
 fn unregister_impl(layout: &Layout, reason: Reason) -> Result<Outcome, RegisterError> {
     let mut st = state::load(layout)?;
-    let recorded = st
-        .get(Extension::Clapp)
-        .and_then(|r| r.os_path.clone())
-        .unwrap_or_else(|| macos::bundle_path(&home_dir().unwrap_or_default()));
 
-    let existed = recorded.exists();
-    if existed {
-        // Unregister with Launch Services *before* removing the bundle: it
-        // reads the bundle to learn which types to release.
-        let _ = unregister_with_launch_services(&recorded);
-        std::fs::remove_dir_all(&recorded).map_err(|source| RegisterError::Bundle { source })?;
-    }
+    // Only ever remove a bundle this `~/.cln/` recorded creating.
+    //
+    // The previous version fell back to `$HOME/Applications/Clean.app` when the
+    // state file named no path, which made "unregister with an empty state"
+    // mean "delete whatever bundle happens to be at the default location". A
+    // test with a tempdir `CLN_HOME` — an empty state — therefore deleted the
+    // developer's real registration on every run, and the symptom appeared much
+    // later as Finder offering to search the App Store for a handler.
+    //
+    // Nothing recorded means nothing of ours to remove. That is also the honest
+    // reading: manager should not delete an application it cannot show it
+    // installed.
+    let recorded = st.get(Extension::Clapp).and_then(|r| r.os_path.clone());
+
+    let removed = match recorded.as_deref() {
+        Some(bundle) if bundle.exists() => {
+            // Unregister with Launch Services *before* removing the bundle: it
+            // reads the bundle to learn which types to release.
+            let _ = unregister_with_launch_services(bundle);
+            std::fs::remove_dir_all(bundle).map_err(|source| RegisterError::Bundle { source })?;
+            Some(bundle.to_path_buf())
+        }
+        _ => None,
+    };
+    let existed = removed.is_some();
 
     // A user-requested removal is remembered so a later `cln install` honors
     // it (§00.12); housekeeping clears the entry instead, since a cleared
@@ -287,7 +301,7 @@ fn unregister_impl(layout: &Layout, reason: Reason) -> Result<Outcome, RegisterE
 
     Ok(Outcome {
         extensions: Extension::ALL.to_vec(),
-        os_path: existed.then_some(recorded),
+        os_path: removed,
         bound_binary: None,
         unchanged: !existed,
     })
@@ -442,8 +456,38 @@ mod tests {
     #[test]
     fn unregistering_when_nothing_is_registered_succeeds() {
         let (_h, l) = layout();
-        unregister(&l, Reason::UserRequested).unwrap();
+        let out = unregister(&l, Reason::UserRequested).unwrap();
+        assert!(
+            out.unchanged,
+            "nothing was recorded, so nothing was removed"
+        );
+        assert!(out.os_path.is_none());
         assert!(!state::load(&l).unwrap().is_registered(Extension::Clapp));
+    }
+
+    /// Unregistering an empty state must not touch a bundle it never recorded.
+    ///
+    /// This is the bug that broke the developer's own machine: `unregister`
+    /// used to fall back to `$HOME/Applications/Clean.app`, so this very test —
+    /// running with a tempdir `CLN_HOME`, and therefore an empty state —
+    /// deleted the real registration on every run. The symptom surfaced much
+    /// later, as Finder offering to search the App Store for a handler.
+    #[test]
+    fn unregistering_an_empty_state_deletes_nothing() {
+        let (_h, l) = layout();
+
+        // A bundle at the default location, which this layout never recorded.
+        let home = tempdir().unwrap();
+        let bystander = home.path().join("Applications").join("Clean.app");
+        std::fs::create_dir_all(&bystander).unwrap();
+        std::fs::write(bystander.join("marker"), b"not ours").unwrap();
+
+        unregister(&l, Reason::UserRequested).unwrap();
+
+        assert!(
+            bystander.join("marker").exists(),
+            "unregister must only remove a bundle this ~/.cln recorded"
+        );
     }
 
     /// A registration whose bundle was deleted behind manager's back must be

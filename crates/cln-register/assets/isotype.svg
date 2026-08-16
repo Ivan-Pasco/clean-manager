@@ -1,11 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- The Clean Language isotype: three bars, no dots.
-       Proportions taken from clean-studio's logo.svg (60 x 12 on a 20 pitch),
-       scaled 8x: 480 x 96 on a 160 pitch. Fully rounded per request.
-       Stack spans 336..688 and is centred on 512. -->
+  <!-- Rounded-square tile, macOS style: the mark sits on a surface with
+       rounded corners rather than floating on transparency. -->
+  <rect x="76" y="76" width="872" height="872" rx="196" fill="#F5F5F7"/>
   <g fill="#26262B">
-    <rect x="272" y="336" width="480" height="96" rx="48"/>
-    <rect x="272" y="464" width="480" height="96" rx="48"/>
-    <rect x="272" y="592" width="480" height="96" rx="48"/>
+    <rect x="292" y="356" width="440" height="88" rx="44"/>
+    <rect x="292" y="468" width="440" height="88" rx="44"/>
+    <rect x="292" y="580" width="440" height="88" rx="44"/>
   </g>
 </svg>

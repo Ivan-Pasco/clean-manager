@@ -59,8 +59,10 @@ use crate::state::Extension;
 /// easy to confuse: `clean-cloud-logo.png` is a *different* isotype (gradient
 /// bars with knobs) belonging to Clean Cloud, and using it here would brand
 /// every `.clapp` as a Cloud artifact. Proportions come from the Language
-/// logo's vector form, 60 × 12 on a 20 pitch, scaled 8×; the corners are
-/// rounded, which the wordmark's square-cut bars are not.
+/// logo's vector form, 60 × 12 on a 20 pitch; the bars are rounded, which the
+/// wordmark's square-cut bars are not, and they sit on a rounded-square tile
+/// rather than floating on transparency — the shape macOS icons take, and what
+/// gives the icon visible edges at every size.
 /// `assets/source-logo.svg` is kept beside it as the reference.
 ///
 /// Embedded rather than read from disk: `cln` is a single binary that must
