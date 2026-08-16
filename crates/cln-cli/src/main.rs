@@ -56,6 +56,12 @@ enum Cmd {
 
     /// Package a built project into a distributable archive.
     Package(verbs::project::BuildArgs),
+
+    /// Run a packaged artifact.
+    ///
+    /// Accepts a `.clapp` bundle or a bare `.wasm` component. The runtime is
+    /// chosen by the artifact's pin, then the project's, then the active one.
+    Run(verbs::run::RunArgs),
 }
 
 fn main() -> ExitCode {
@@ -78,6 +84,7 @@ fn main() -> ExitCode {
         Cmd::Available(a) => verbs::toolchain::available(a, &env).map(|()| ExitCode::SUCCESS),
         Cmd::Build(a) => verbs::project::build(a, &env),
         Cmd::Package(a) => verbs::project::package(a, &env),
+        Cmd::Run(a) => verbs::run::run(a, &env),
     };
     match result {
         Ok(code) => code,

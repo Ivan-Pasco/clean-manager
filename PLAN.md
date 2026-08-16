@@ -97,11 +97,13 @@ clean-manager/
 │   │
 │   ├── cln-run/                        # `cln run <path>` (Manager §00.13)
 │   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── artifact.rs             # detect .clapp | .serve | .wasm | project dir
-│   │       ├── manifest.rs             # read manifest.toml from .clapp/.serve archives
-│   │       ├── extract.rs              # unpack .clapp/.serve into ~/.cln/cache/run/<sha>/
-│   │       └── invoke.rs               # pick runtime version + world, invoke runtime binary
+│   │       ├── lib.rs                  # the pipeline: detect → extract → resolve → invoke
+│   │       ├── artifact.rs             # detect bundle | .wasm | project dir, by magic bytes
+│   │       ├── manifest.rs             # read manifest.toml (read half of framework's writer)
+│   │       ├── extract.rs              # unpack into ~/.cln/cache/run/<sha>/, structure intact
+│   │       ├── runtime.rs              # artifact pin → project pin → active
+│   │       ├── devconfig.rs            # generated development host.toml for a bare .wasm
+│   │       └── invoke.rs               # spawn the runtime; inherit every stream
 │   │
 │   ├── cln-register/                   # OS file associations (Manager §00.12)
 │   │   └── src/
@@ -317,10 +319,63 @@ Until then, a relocated toolchain needs `--host-wit-cache` passed explicitly, or
 - `cln fetch --internal --project=<path>` — the framework callback shape (§00.8).
 - Registry (`SourceKind::Registry`) is deferred to M3 per your earlier decision.
 
-**Phase 4 — `cln run`.**
+**Phase 4 — `cln run`.** *Shipped, except project directories.*
 
-- Detect artifact type: project directory → dispatch `cln build` then run `dist/app.wasm`; `.clapp` / `.serve` → extract to `~/.cln/cache/run/<sha>/`, read `manifest.toml`, resolve runtime version, invoke runtime binary; bare `.wasm` → invoke with default world.
-- Runtime resolution order per §00.13: artifact manifest exact-pin → project `.cln/runtime-version` → global `~/.cln/active/runtime`.
+- Detect artifact type: `.clapp` / `.serve` → extract to `~/.cln/cache/run/<sha>/`, read `manifest.toml`, resolve runtime version, invoke runtime binary ✅; bare `.wasm` → invoke with a generated development config ✅; project directory → *deferred, see below*.
+- Runtime resolution order per §00.13: artifact manifest exact-pin → project `.cln/runtime-version` → global `~/.cln/active/runtime`. ✅
+
+**Detection reads bytes, not extensions.** `framework-package::file_name`
+writes `.clapp` for both kinds — `manifest.toml`'s `kind` field is the
+discriminator (§00.14), so `.serve` is not a distinct file extension in
+practice. `cln-run::artifact` therefore matches the ZIP and wasm magic numbers
+and uses the extension only to word a better error. An extension-driven
+detector would need re-teaching every time the producer's naming shifted.
+
+**The cache key is the archive's SHA-256, not the component's.** The two differ
+exactly when the wasm is unchanged but something around it moved — a
+regenerated `config/host.toml`, a new asset, a bumped version. Keying on the
+component would serve a stale config for a bundle whose configuration is the
+only thing that changed, which is both a real editing loop and a silent wrong
+answer. Keying on the archive re-extracts in precisely those cases, and the key
+is computable before the archive is opened.
+
+**Extraction preserves the archive's structure.** `config/host.toml` says
+`wasm = "../app.wasm"` and `clean-host-core` resolves that against the config
+file's own directory, so flattening the archive produces a tree that passes
+every structural check and then fails looking for `config/app.wasm`. This was a
+spec defect as well as an implementation hazard: §00.14's `.clapp` diagram did
+not list `config/` at all. Fixed in that section, which owns the format.
+
+**`runtime_version = "unknown"` is not a pin.** §00.13 calls the manifest field
+an exact pin that MUST be installed, but the framework stamps the literal
+`"unknown"` when it has no runtime handle — which is every artifact it produces
+today. A value that parses as semver binds strictly, with no fallback: a
+component checked against one host contract has no guarantee against another.
+A value that does not parse is the producer declining to pin, and resolution
+falls through to the project pin and then the active runtime. The rule stays
+exactly as strict as §00.13 wherever a pin actually exists.
+
+**A missing pinned runtime fails; it does not prompt or fetch.** §00.13 says
+`cln run` "prompts to install it and exits". Manager instead exits non-zero
+naming `cln install runtime <version>`. `cln run` is used non-interactively — by
+CI, by scripts, by a double-click with no terminal — and blocking on a read
+nobody can answer would hang those callers. Auto-fetching is the surprise open
+question 9 rules out for builds, and it would make `--offline` meaningless.
+
+**`cln run <project-dir>` is deferred.** Building then running needs framework
+dispatch inside `cln-run`, which would couple the run path to the build side of
+the toolchain to serve a case the user can already express as `cln build` then
+`cln run`. The error names both commands rather than failing obscurely. Wiring
+it later is a call into `cln-dispatch` from one match arm.
+
+**Invocation does not reuse `cln-dispatch::stream`.** That module pipes stdout
+so manager can parse a JSON envelope — right for `cln build`, wrong here. A
+running guest's stdout belongs to the user, and `clean-cli` guarantees no
+framing of its own (CLIH-10), so `cln-run::invoke` inherits stdout, stderr, and
+stdin outright. That preserves byte-exactness, stream interleaving, TTY
+detection, and interactivity. It is also the one place manager inherits stdin
+rather than closing it: everywhere else the child is a build tool that should
+never prompt, but here the child *is* the user's program.
 
 **Phase 5 — Scaffolding + self-update + shell.**
 

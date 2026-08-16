@@ -6,12 +6,14 @@ members = [
     "crates/cln-install",
     "crates/cln-project",
     "crates/cln-dispatch",
+    "crates/cln-run",
     "crates/cln-cli",
     "testing/fake-framework",
+    "testing/fake-runtime",
 ]
 
 [workspace.package]
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
@@ -23,11 +25,13 @@ cln-layout = { path = "crates/cln-layout" }
 cln-install = { path = "crates/cln-install" }
 cln-project = { path = "crates/cln-project" }
 cln-dispatch = { path = "crates/cln-dispatch" }
+cln-run = { path = "crates/cln-run" }
 
 anyhow = "1"
 thiserror = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 semver = { version = "1", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 ureq = { version = "2", features = ["json", "tls"] }

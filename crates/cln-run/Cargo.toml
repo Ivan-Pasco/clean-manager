@@ -1,0 +1,27 @@
+[package]
+name = "cln-run"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "`cln run` — detect an artifact, extract it, resolve a runtime, invoke it."
+
+# Deliberately absent: any wasm engine, component parser, or codegen crate.
+# Architecture Boundaries §2.3 — manager routes, it never executes. The only
+# thing this crate knows how to do with a component is hand its path to a
+# binary it did not build.
+
+[dependencies]
+cln-shared = { workspace = true }
+cln-layout = { workspace = true }
+cln-project = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

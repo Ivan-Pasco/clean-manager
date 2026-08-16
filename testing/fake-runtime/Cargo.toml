@@ -1,0 +1,13 @@
+[package]
+name = "fake-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Test double speaking the clean-runtime CLI contract."
+publish = false
+
+[[bin]]
+name = "clean-runtime"
+path = "src/main.rs"

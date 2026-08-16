@@ -17,6 +17,7 @@ cln-layout = { workspace = true }
 cln-install = { workspace = true }
 cln-project = { workspace = true }
 cln-dispatch = { workspace = true }
+cln-run = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 semver = { workspace = true }
@@ -24,3 +25,4 @@ semver = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 serde_json = { workspace = true }
+zip = { workspace = true }
