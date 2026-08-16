@@ -107,11 +107,12 @@ clean-manager/
 │   │
 │   ├── cln-register/                   # OS file associations (Manager §00.12)
 │   │   └── src/
-│   │       ├── lib.rs
+│   │       ├── lib.rs                  # register / unregister / status
 │   │       ├── state.rs                # ~/.cln/registrations/state.toml
-│   │       ├── macos.rs                # LSRegisterURL + minimal .app bundle
-│   │       ├── windows.rs              # HKCU\Software\Classes registry keys
-│   │       └── linux.rs                # xdg-mime + .desktop file
+│   │       ├── macos.rs                # lsregister + minimal .app bundle ✅
+│   │       ├── unsupported.rs          # Windows/Linux: fail loudly, never silently
+│   │       ├── windows.rs              # HKCU\Software\Classes registry keys (M3)
+│   │       └── linux.rs                # xdg-mime + .desktop file (M3)
 │   │
 │   ├── cln-doctor/                     # `cln doctor` diagnostics (Manager §00.3.7)
 │   │   └── src/
@@ -384,12 +385,73 @@ never prompt, but here the child *is* the user's program.
 - `cln-shell`: first-run PATH injection into `~/.zshrc` etc. with a guarded marker comment.
 - `cln doctor` — PATH check, symlinks intact, active versions installed, cache health.
 
-**Phase 6 — File associations, telemetry, MCP.**
+**Phase 6 — File associations, telemetry, MCP.** *macOS registration pulled forward from M3.*
 
-- `cln register`, `cln unregister`, `cln register --status` (§00.12).
+- `cln register`, `cln unregister`, `cln register --status` (§00.12). **macOS ✅; Windows and Linux deliberately unimplemented.**
 - `cln telemetry on|off|status` (§00.10).
 - `cln mcp install` — write MCP client config for Claude Code, VS Code, Cursor.
 - `cln explain <CODE>` — dispatches to framework (which invokes compiler API per §00.4 dispatch table).
+
+**Registration runs at install time. This diverges from §00.12 and needs the
+spec owner's ruling.** §00.12 makes registration opt-in: the user runs `cln
+register`, or accepts a one-time prompt on their first `cln run` of a `.clapp`.
+Manager instead registers automatically at the end of `cln install`. The reason
+is that the double-click path is the demonstration that the toolchain works, and
+an association nobody knows to ask for is one nobody turns on. The prompt §00.12
+describes also cannot be shown where it matters most: the first time many users
+meet a `.clapp` is by double-clicking one, which has no terminal to prompt in.
+Registration is per-user, touches only `~/Applications` and `~/.cln/`, needs no
+elevation, and is undone by `cln unregister` — so the cost of being wrong is
+low. It remains a knowing divergence from the spec of record, recorded here
+rather than silently absorbed. **Either §00.12 should be amended to make
+registration automatic with an opt-out, or this should revert to opt-in.**
+
+**A failed registration never fails an install.** The toolchain is fully usable
+from a terminal without an association, so a Launch Services hiccup or a
+read-only `~/Applications` must not turn a working install into a reported
+failure. Failures print a warning naming `cln register`, so they stay visible
+and retryable instead of silent.
+
+**Windows and Linux are unimplemented, and say so.** §00.12 specifies registry
+keys and an `xdg-mime` `.desktop` handler, and §5 requires a per-OS test matrix
+before either can be trusted; that matrix does not exist. Both platforms
+therefore return an error naming the platform and pointing at `cln run`. A stub
+that silently did nothing would be worse than no stub: `cln install` would
+report success and the user would double-click a file that never opens, with no
+message anywhere connecting the two.
+
+**A double-click opens a Terminal window.** A bundle launched from Finder has no
+controlling terminal, so a `cli`-world guest's stdout would go nowhere: `hello`
+would be written to a void and the process would exit 0 with no visible effect.
+The bundle's launcher therefore asks `Terminal.app` to run the artifact, and
+holds the window open with a trailing read so a program that prints one line and
+exits does not flash and vanish. The exit status is printed too, so a failing
+guest is visible rather than silent.
+
+The alternative — capturing stdout and showing it in a native dialog — was
+rejected: it truncates long output, cannot support a guest that reads stdin, and
+misrepresents a CLI program as a GUI one. A terminal is what a `.clapp` honestly
+is today. When a GUI-shaped world exists, the launcher gains a branch on the
+manifest's world; that branch is deliberately absent rather than written blind
+against a world nothing can produce.
+
+**The association binds `~/.cln/bin/cln`, not the running binary.** The shim in
+`bin/` is the stable path across upgrades, so an association made once survives
+every subsequent `cln install`. Binding `current_exe()` would pin the
+association to whichever versioned path happened to be running when the user
+registered.
+
+**Registration is idempotent by full regeneration.** The `.app` bundle is
+deleted and rewritten rather than merged, so the result depends only on the
+current binary path and version — never on what an older manager left behind.
+Re-running converges instead of accumulating, and an upgrade rebinds cleanly.
+
+**`cln uninstall` deregisters when the last runtime goes.** §00.12 couples
+registration to binary lifetime. `cln uninstall` removes a *version*, not the
+toolchain, so it is the wrong hook in general — but removing the last runtime is
+the case that actually breaks double-click, since the association would then
+open a window only to report that no runtime can be resolved. Manager withdraws
+the association there and lets Finder fall back to its normal behavior.
 
 **Phase 7 — Everything else.** `cln repro`, `cln report`, `cln fixes`, `cln db migrate <verb>` (dispatches to framework), `cln api spec/sdk` (dispatches to framework).
 
@@ -452,7 +514,7 @@ Deliverables:
 Deliverables:
 - OCI registry client (Manager §00.11.1).
 - Community library signing verification (§00.11.2).
-- `cln register`, `cln unregister` — all three OSes.
+- `cln register`, `cln unregister` — **Windows and Linux** (macOS shipped early; see Phase 6).
 - `cln telemetry`.
 - `cln mcp install`.
 - `cln repro`, `cln report`, `cln fixes` (or stubs pointing at the error-reporting flow).

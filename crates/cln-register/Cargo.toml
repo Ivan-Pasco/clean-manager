@@ -1,0 +1,17 @@
+[package]
+name = "cln-register"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OS file associations for Clean artifacts (Manager §00.12)"
+
+[dependencies]
+cln-layout = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -18,6 +18,7 @@ cln-install = { workspace = true }
 cln-project = { workspace = true }
 cln-dispatch = { workspace = true }
 cln-run = { workspace = true }
+cln-register = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 semver = { workspace = true }

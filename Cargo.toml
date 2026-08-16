@@ -7,13 +7,14 @@ members = [
     "crates/cln-project",
     "crates/cln-dispatch",
     "crates/cln-run",
+    "crates/cln-register",
     "crates/cln-cli",
     "testing/fake-framework",
     "testing/fake-runtime",
 ]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
@@ -26,6 +27,7 @@ cln-install = { path = "crates/cln-install" }
 cln-project = { path = "crates/cln-project" }
 cln-dispatch = { path = "crates/cln-dispatch" }
 cln-run = { path = "crates/cln-run" }
+cln-register = { path = "crates/cln-register" }
 
 anyhow = "1"
 thiserror = "1"

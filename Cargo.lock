@@ -149,7 +149,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cln-cli"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "clap",
@@ -157,6 +157,7 @@ dependencies = [
  "cln-install",
  "cln-layout",
  "cln-project",
+ "cln-register",
  "cln-run",
  "cln-shared",
  "semver",
@@ -167,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "cln-dispatch"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "cln-layout",
  "cln-project",
@@ -181,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "cln-install"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "cln-layout",
  "cln-shared",
@@ -199,7 +200,7 @@ dependencies = [
 
 [[package]]
 name = "cln-layout"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "cln-shared",
  "semver",
@@ -209,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "cln-project"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "cln-shared",
  "semver",
@@ -218,8 +219,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cln-register"
+version = "0.1.10"
+dependencies = [
+ "cln-layout",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "cln-run"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "cln-layout",
  "cln-project",
@@ -235,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "cln-shared"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "semver",
  "serde",
@@ -322,11 +334,11 @@ dependencies = [
 
 [[package]]
 name = "fake-framework"
-version = "0.1.9"
+version = "0.1.10"
 
 [[package]]
 name = "fake-runtime"
-version = "0.1.9"
+version = "0.1.10"
 
 [[package]]
 name = "fastrand"

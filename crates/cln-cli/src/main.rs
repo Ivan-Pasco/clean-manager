@@ -57,6 +57,15 @@ enum Cmd {
     /// Package a built project into a distributable archive.
     Package(verbs::project::BuildArgs),
 
+    /// Register Clean file types with the OS so double-click runs them.
+    ///
+    /// Runs automatically during `cln install`; this is for re-running it or
+    /// inspecting the result with `--status`.
+    Register(verbs::os::RegisterArgs),
+
+    /// Remove Clean file associations from the OS.
+    Unregister(verbs::os::UnregisterArgs),
+
     /// Run a packaged artifact.
     ///
     /// Accepts a `.clapp` bundle or a bare `.wasm` component. The runtime is
@@ -85,6 +94,8 @@ fn main() -> ExitCode {
         Cmd::Build(a) => verbs::project::build(a, &env),
         Cmd::Package(a) => verbs::project::package(a, &env),
         Cmd::Run(a) => verbs::run::run(a, &env),
+        Cmd::Register(a) => verbs::os::register(a, &env).map(|()| ExitCode::SUCCESS),
+        Cmd::Unregister(a) => verbs::os::unregister(a, &env).map(|()| ExitCode::SUCCESS),
     };
     match result {
         Ok(code) => code,

@@ -132,31 +132,49 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::tempdir;
 
-    /// A shell script standing in for a component binary.
-    #[cfg(unix)]
-    /// Write an executable shell script and return its path.
+    /// Write an executable shell script standing in for a component binary,
+    /// and return its path.
     ///
-    /// The descriptor is closed *before* the file is made executable, and the
-    /// executable bit is set via the open handle rather than by path. Linux
-    /// refuses to exec a file any process still holds open for writing
-    /// (`ETXTBSY`), and cargo runs these tests on parallel threads, so a
-    /// descriptor left open here surfaces as a "Text file busy" spawn failure
-    /// in whichever sibling test happens to exec at the wrong moment. That is
-    /// load-bearing rather than tidiness: dropping it implicitly at the end of
-    /// the function leaves the close racing the sibling's exec.
+    /// # Why this writes to a temporary name and renames
+    ///
+    /// Linux refuses to `exec` a file that any process holds open for writing,
+    /// with `ETXTBSY`. The subtlety is that the offending descriptor need not
+    /// be this test's: cargo runs tests on parallel threads, `Command::spawn`
+    /// forks, and a fork started by thread A inherits every descriptor open in
+    /// thread B — including a script B is still writing. B's file then looks
+    /// busy to A's exec, and the test that fails is whichever one happened to
+    /// spawn at the wrong moment. That is why this surfaced as a flake in CI
+    /// and never locally: it needs two threads to line up.
+    ///
+    /// Closing the handle promptly narrows the window but cannot close it,
+    /// because the race is against another thread's fork rather than against
+    /// this function's own cleanup. Writing to a scratch name and `rename`ing
+    /// into place removes the race outright: the path that gets exec'd is a
+    /// fresh directory entry whose inode was never open for writing under the
+    /// name any sibling could have inherited. Rename is atomic on POSIX, so
+    /// the file is either absent or complete and executable, never mid-write.
+    #[cfg(unix)]
     fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
         use std::io::Write as _;
         use std::os::unix::fs::PermissionsExt;
 
         let path = dir.join(name);
-        let mut file = std::fs::File::create(&path).unwrap();
+        let staging = dir.join(format!(".{name}.staging"));
+
+        // Write the contents with the executable bit *off*, so that even if a
+        // sibling's fork inherits this descriptor, the file it holds is not an
+        // executable anyone will try to run.
+        let mut file = std::fs::File::create(&staging).unwrap();
         file.write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
-            .unwrap();
-        file.set_permissions(std::fs::Permissions::from_mode(0o755))
             .unwrap();
         file.sync_all().unwrap();
         drop(file);
 
+        // Set the executable bit by path, after every handle is closed. The
+        // file is now executable and held open by nobody.
+        std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        std::fs::rename(&staging, &path).unwrap();
         path
     }
 

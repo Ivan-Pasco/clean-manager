@@ -120,6 +120,12 @@ pub fn install(args: InstallArgs, env: &Env) -> Result<()> {
             println!("active {kind} -> {}", outcome.version);
         }
     }
+
+    // Bind .clapp/.serve so a double-click works straight after install,
+    // rather than waiting for the user to discover a separate command
+    // (§00.12 diverges here — see PLAN.md). Never fails the install.
+    crate::verbs::os::register_after_install(env);
+
     Ok(())
 }
 
@@ -165,6 +171,22 @@ pub fn uninstall(args: UninstallArgs, env: &Env) -> Result<()> {
         .with_context(|| format!("'{}' is not a valid semver version", args.version))?;
     do_uninstall(&env.layout, kind, &v)?;
     println!("removed {kind} {v}");
+
+    // §00.12 couples registration state to binary lifetime: an association
+    // pointing at a runtime that is no longer installed would open a Terminal
+    // only to print a resolution error. Removing the last runtime is the case
+    // that actually breaks double-click, so deregister there rather than
+    // leaving a association that cannot succeed.
+    if kind == ToolchainKind::Runtime
+        && env
+            .layout
+            .list_installed(ToolchainKind::Runtime)
+            .map(|r| r.is_empty())
+            .unwrap_or(false)
+    {
+        crate::verbs::os::unregister_after_last_runtime(env);
+    }
+
     Ok(())
 }
 
