@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" role="img" aria-label="Clean Studio">
+  <defs>
+    <linearGradient id="cs-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7A6BFF"/>
+      <stop offset="100%" stop-color="#4A3AE8"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <rect x="0"  y="14" width="60" height="12" rx="6" fill="url(#cs-grad)"/>
+    <rect x="0"  y="34" width="60" height="12" rx="6" fill="url(#cs-grad)"/>
+    <rect x="0"  y="54" width="60" height="12" rx="6" fill="url(#cs-grad)"/>
+  </g>
+  <text x="80" y="55" font-family="'Inter', system-ui, sans-serif" font-size="38" font-weight="500" fill="#0F1533" letter-spacing="-0.5">clean studio</text>
+</svg>

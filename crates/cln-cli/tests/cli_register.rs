@@ -5,13 +5,20 @@
 //! platform without an implementation says so instead of pretending.
 //!
 //! The macOS cases drive `~/Applications` through a redirected `HOME`, so a
-//! test run never touches the developer's real applications directory. They
-//! also set `CLN_REGISTER_SKIP_LSREGISTER`, because Launch Services is
-//! machine-wide and ignores `HOME`: without it, every run registers a tempdir
-//! bundle in the developer's real database and leaves it dangling once the
-//! tempdir is deleted. Enough dangling entries and the OS resolves `.clapp` to
-//! a bundle that no longer exists, breaking double-click on the developer's own
-//! machine.
+//! test run never touches the developer's real applications directory.
+//!
+//! Launch Services is machine-wide and ignores `HOME`, so a bundle written into
+//! a tempdir still leaves a claim on `.clapp` in the developer's real database —
+//! one that dangles as soon as the tempdir is deleted. Enough of those and the
+//! type reads `inactive` and Finder shows a generic icon for real packages.
+//!
+//! Two things are needed to prevent that, and only together:
+//!
+//! - `CLN_REGISTER_SKIP_LSREGISTER` stops manager calling `lsregister`.
+//! - [`Registered`] withdraws the claim afterwards anyway, because
+//!   **`osacompile` ad-hoc signs the bundle it builds and signing registers
+//!   it** — a side effect of building the droplet at all, which no environment
+//!   variable of ours can suppress.
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -49,6 +56,19 @@ fn fake_shim(cln_home: &std::path::Path) {
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// Withdraws a test bundle's Launch Services claim on drop.
+///
+/// See the module docs: `osacompile` registers every bundle it signs, so the
+/// claim outlives the tempdir unless it is taken back explicitly.
+struct Registered(PathBuf);
+
+impl Drop for Registered {
+    fn drop(&mut self) {
+        const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+        let _ = Command::new(LSREGISTER).arg("-u").arg(&self.0).output();
     }
 }
 
@@ -213,6 +233,7 @@ mod macos {
     fn installing_registers_automatically() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
 
         let out = install_runtime(cln_home.path(), home.path(), &[], None);
         assert!(out.status.success(), "{}", stderr(&out));
@@ -228,6 +249,7 @@ mod macos {
     fn install_no_register_skips_registration() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
 
         let out = install_runtime(cln_home.path(), home.path(), &["--no-register"], None);
         assert!(out.status.success(), "{}", stderr(&out));
@@ -244,6 +266,7 @@ mod macos {
     fn cln_no_register_env_skips_registration() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
 
         let out = install_runtime(cln_home.path(), home.path(), &[], Some("1"));
         assert!(out.status.success(), "{}", stderr(&out));
@@ -258,6 +281,7 @@ mod macos {
     fn cln_no_register_zero_still_registers() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
 
         let out = install_runtime(cln_home.path(), home.path(), &[], Some("0"));
         assert!(out.status.success(), "{}", stderr(&out));
@@ -270,6 +294,7 @@ mod macos {
     fn an_explicit_unregister_survives_a_later_install() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
 
         assert!(install_runtime(cln_home.path(), home.path(), &[], None)
             .status
@@ -297,6 +322,7 @@ mod macos {
     fn register_after_unregister_opts_back_in() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
         fake_shim(cln_home.path());
 
         assert!(run(cln_home.path(), home.path(), &["register"])
@@ -326,6 +352,7 @@ mod macos {
     fn registering_creates_a_bundle_bound_to_the_shim() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
         fake_shim(cln_home.path());
 
         let out = run(cln_home.path(), home.path(), &["register"]);
@@ -370,6 +397,7 @@ mod macos {
     fn registering_twice_leaves_exactly_one_bundle() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
         fake_shim(cln_home.path());
 
         assert!(run(cln_home.path(), home.path(), &["register"])
@@ -399,6 +427,7 @@ mod macos {
     fn unregistering_removes_the_bundle_and_the_state() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
         fake_shim(cln_home.path());
 
         assert!(run(cln_home.path(), home.path(), &["register"])
@@ -422,6 +451,7 @@ mod macos {
     fn the_registration_never_claims_wasm() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
         fake_shim(cln_home.path());
 
         assert!(run(cln_home.path(), home.path(), &["register"])
@@ -442,6 +472,7 @@ mod macos {
     fn status_reports_drift_when_the_bundle_is_deleted() {
         let cln_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let _reg = Registered(bundle(home.path()));
         fake_shim(cln_home.path());
 
         assert!(run(cln_home.path(), home.path(), &["register"])

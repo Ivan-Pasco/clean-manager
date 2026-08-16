@@ -53,12 +53,19 @@ use std::path::{Path, PathBuf};
 
 use crate::state::Extension;
 
-/// The Clean isotype, as a macOS icon.
+/// The Clean Language isotype, as a macOS icon.
+///
+/// Three bars, no dots — the Language mark, not the Cloud one. The two are
+/// easy to confuse: `clean-cloud-logo.png` is a *different* isotype (gradient
+/// bars with knobs) belonging to Clean Cloud, and using it here would brand
+/// every `.clapp` as a Cloud artifact. Proportions come from the Language
+/// logo's vector form, 60 × 12 on a 20 pitch, scaled 8×; the corners are
+/// rounded, which the wordmark's square-cut bars are not.
+/// `assets/source-logo.svg` is kept beside it as the reference.
 ///
 /// Embedded rather than read from disk: `cln` is a single binary that must
 /// work on a machine with no Clean checkout, and an icon fetched at
-/// registration time would be one more thing to fail. 537 KB of the binary
-/// buys a Finder icon on every `.clapp`.
+/// registration time would be one more thing to fail.
 const ICNS: &[u8] = include_bytes!("../assets/Clean.icns");
 
 /// The icon file's name inside the bundle, without the extension —
@@ -299,6 +306,15 @@ fn next_temp_id() -> u64 {
 ///
 /// The source is written to a file rather than piped, because `osacompile`
 /// reads its input as a path and gives a clearer error when the file is bad.
+///
+/// **`osacompile` ad-hoc signs what it produces, and signing registers the
+/// bundle with Launch Services.** That happens whether or not manager ever
+/// calls `lsregister`, so a test that writes a bundle into a tempdir still
+/// leaves a claim on `.clapp` pointing at a directory that is deleted seconds
+/// later. Enough of those and the type goes `inactive` and Finder falls back
+/// to a generic icon. `CLN_REGISTER_SKIP_LSREGISTER` cannot prevent it —
+/// the registration is a side effect of compiling — so tests withdraw the
+/// claim themselves; see `unregister_bundle_for_test`.
 fn compile_droplet(bundle: &Path, source: &str) -> std::io::Result<()> {
     // Keyed on a per-call counter as well as the pid: two registrations in one
     // process (the test suite does exactly this, in parallel) would otherwise
@@ -327,16 +343,45 @@ fn compile_droplet(bundle: &Path, source: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Withdraw a bundle's Launch Services claim.
+///
+/// Exposed for tests: `osacompile` registers every bundle it signs, so a test
+/// that writes one into a tempdir must take the claim back or it outlives the
+/// directory. Not part of the public API — production code withdraws through
+/// [`crate::unregister`].
+#[cfg(test)]
+pub(crate) fn unregister_bundle_for_test(bundle: &Path) {
+    let _ = std::process::Command::new(crate::LSREGISTER)
+        .arg("-u")
+        .arg(bundle)
+        .output();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    /// Withdraws a test bundle's Launch Services claim on drop.
+    ///
+    /// `osacompile` signs what it builds and signing registers it, so without
+    /// this every run of this suite leaves a claim on `.clapp` pointing into a
+    /// deleted tempdir. Those accumulate until the type reads `inactive` and
+    /// Finder shows a generic icon for real packages on the developer's own
+    /// machine.
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            unregister_bundle_for_test(&self.0);
+        }
+    }
 
     #[test]
     fn the_bundle_has_the_structure_launch_services_requires() {
         let home = tempdir().unwrap();
         let bundle =
             write_bundle(home.path(), Path::new("/Users/a/.cln/bin/cln"), "0.1.9").unwrap();
+        let _g = Cleanup(bundle.clone());
 
         assert!(bundle.join("Contents/Info.plist").is_file());
         assert!(bundle.join("Contents/MacOS/droplet").is_file());
@@ -350,6 +395,7 @@ mod tests {
         let home = tempdir().unwrap();
         let bundle =
             write_bundle(home.path(), Path::new("/Users/a/.cln/bin/cln"), "0.1.9").unwrap();
+        let _g = Cleanup(bundle.clone());
 
         let exe = bundle.join("Contents/MacOS/droplet");
         assert!(
@@ -369,6 +415,7 @@ mod tests {
         let home = tempdir().unwrap();
         let bundle =
             write_bundle(home.path(), Path::new("/Users/a/.cln/bin/cln"), "0.1.9").unwrap();
+        let _g = Cleanup(bundle.clone());
 
         let icon = bundle
             .join("Contents/Resources")
@@ -392,6 +439,7 @@ mod tests {
         let home = tempdir().unwrap();
         let bundle =
             write_bundle(home.path(), Path::new("/Users/a/.cln/bin/cln"), "0.1.9").unwrap();
+        let _g = Cleanup(bundle.clone());
 
         let plist = std::fs::read_to_string(bundle.join("Contents/Info.plist")).unwrap();
         assert!(plist.contains("CFBundleDocumentTypes"));

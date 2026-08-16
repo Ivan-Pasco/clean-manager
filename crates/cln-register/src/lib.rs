@@ -355,7 +355,7 @@ fn unregister_with_launch_services(bundle: &Path) -> Result<(), RegisterError> {
 }
 
 #[cfg(target_os = "macos")]
-const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+pub(crate) const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
 #[cfg(target_os = "macos")]
 fn home_dir() -> Result<PathBuf, RegisterError> {
