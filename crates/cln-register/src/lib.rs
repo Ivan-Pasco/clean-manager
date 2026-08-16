@@ -275,6 +275,24 @@ fn unregister_impl(layout: &Layout, reason: Reason) -> Result<Outcome, RegisterE
     })
 }
 
+/// Skip the Launch Services calls, for tests.
+///
+/// **Launch Services is machine-wide and ignores `HOME`.** A test can redirect
+/// `HOME` so the bundle is written into a tempdir, but `lsregister` still
+/// registers that tempdir path in the user's real database — and the tempdir is
+/// deleted seconds later, leaving an entry pointing at nothing. Enough of those
+/// and the OS resolves `.clapp` to a deleted bundle, which breaks double-click
+/// on the developer's own machine. That is exactly what happened while building
+/// this feature, so it is guarded rather than left to discipline.
+///
+/// Everything else still runs: the bundle is written, the state file is
+/// updated, and every assertion about layout, idempotence, and removal holds.
+/// Only the two `lsregister` calls are skipped.
+#[cfg(target_os = "macos")]
+fn skip_launch_services() -> bool {
+    std::env::var_os("CLN_REGISTER_SKIP_LSREGISTER").is_some()
+}
+
 /// Tell Launch Services the bundle exists.
 ///
 /// `lsregister` is not on `PATH`; it lives inside the CoreServices framework.
@@ -283,6 +301,9 @@ fn unregister_impl(layout: &Layout, reason: Reason) -> Result<Outcome, RegisterE
 /// half-registration this crate is meant to avoid.
 #[cfg(target_os = "macos")]
 fn register_with_launch_services(bundle: &Path) -> Result<(), RegisterError> {
+    if skip_launch_services() {
+        return Ok(());
+    }
     let out = std::process::Command::new(LSREGISTER)
         .arg("-f")
         .arg(bundle)
@@ -299,6 +320,9 @@ fn register_with_launch_services(bundle: &Path) -> Result<(), RegisterError> {
 
 #[cfg(target_os = "macos")]
 fn unregister_with_launch_services(bundle: &Path) -> Result<(), RegisterError> {
+    if skip_launch_services() {
+        return Ok(());
+    }
     let out = std::process::Command::new(LSREGISTER)
         .arg("-u")
         .arg(bundle)
@@ -390,11 +414,17 @@ mod tests {
 
     /// Uninstall calls this unconditionally; it must be safe when nothing was
     /// ever registered, on every platform.
+    ///
+    /// Asserts only on the state file, not on `unchanged`. With no recorded
+    /// `os_path`, the macOS path falls back to `$HOME/Applications/Clean.app`
+    /// to find a bundle an older manager may have left — so on a developer's
+    /// own machine `unchanged` depends on whether *they* have Clean
+    /// registered, which is not this test's subject and would make it pass or
+    /// fail depending on the machine.
     #[test]
     fn unregistering_when_nothing_is_registered_succeeds() {
         let (_h, l) = layout();
-        let out = unregister(&l, Reason::UserRequested).unwrap();
-        assert!(out.unchanged);
+        unregister(&l, Reason::UserRequested).unwrap();
         assert!(!state::load(&l).unwrap().is_registered(Extension::Clapp));
     }
 

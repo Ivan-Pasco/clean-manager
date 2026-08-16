@@ -5,8 +5,13 @@
 //! platform without an implementation says so instead of pretending.
 //!
 //! The macOS cases drive `~/Applications` through a redirected `HOME`, so a
-//! test run never touches the developer's real applications directory or the
-//! real Launch Services database.
+//! test run never touches the developer's real applications directory. They
+//! also set `CLN_REGISTER_SKIP_LSREGISTER`, because Launch Services is
+//! machine-wide and ignores `HOME`: without it, every run registers a tempdir
+//! bundle in the developer's real database and leaves it dangling once the
+//! tempdir is deleted. Enough dangling entries and the OS resolves `.clapp` to
+//! a bundle that no longer exists, breaking double-click on the developer's own
+//! machine.
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -21,6 +26,7 @@ fn run(cln_home: &std::path::Path, home: &std::path::Path, args: &[&str]) -> Out
         .args(args)
         .env("CLN_HOME", cln_home)
         .env("HOME", home)
+        .env("CLN_REGISTER_SKIP_LSREGISTER", "1")
         .output()
         .expect("cln should run")
 }
@@ -154,6 +160,7 @@ fn install_runtime(
     cmd.args(&args)
         .env("CLN_HOME", cln_home)
         .env("HOME", home)
+        .env("CLN_REGISTER_SKIP_LSREGISTER", "1")
         .env("CLN_RELEASES_DIR", releases.path());
     if let Some(v) = no_register_env {
         cmd.env("CLN_NO_REGISTER", v);
