@@ -78,7 +78,7 @@ pub fn register(args: RegisterArgs, env: &Env) -> Result<()> {
     if let Some(p) = &outcome.os_path {
         println!("  via {}", p.display());
     }
-    println!("double-click a .clapp to run it");
+    println!("double-click a .clapp to open it");
     Ok(())
 }
 
@@ -203,7 +203,17 @@ pub fn register_after_install(env: &Env, opted_out: bool) {
     }
 
     match reg::register(&env.layout, &cln, env!("CARGO_PKG_VERSION"), &now_rfc3339()) {
-        Ok(_) => println!("registered .clapp, .serve -> double-click to run"),
+        // Derived from `Extension::ALL` rather than written out: a hardcoded
+        // list survived `.serve` being retired and kept announcing an
+        // extension manager no longer claims.
+        Ok(o) => println!(
+            "registered {} -> double-click to open",
+            o.extensions
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Err(e) => {
             eprintln!("warning: could not register file associations: {e}");
             eprintln!(
