@@ -72,26 +72,29 @@ pub fn choose_action(i: &Inspection) -> Action {
 
     let body = summary(i);
 
-    // Two dialogs rather than one: AppleScript's `display dialog` allows at
-    // most three buttons, and a server package needs Cancel, Details, Run and
-    // Deploy. `choose from list` has no such limit but reads poorly for two
-    // options, so each kind gets the shape that fits it.
+    // Both kinds use real buttons. `choose from list` was tried for the server
+    // case, because AppleScript allows at most three buttons and the actions
+    // are Deploy, Run locally, Show details and Cancel — but it renders the
+    // options as rows in a small scrolling list behind generic Continue/Cancel
+    // buttons, which reads as a file picker and buries the primary action. A
+    // reader can miss "Deploy to Clean Cloud" entirely.
+    //
+    // So the server dialog spends its three buttons on the three *actions* and
+    // drops "Show details" from this screen. Nothing is lost: the summary
+    // already shows every field that mattered, and the details view only adds
+    // the declared worlds and the file's path.
     let script = if i.is_server() {
         r#"on run argv
   set t to item 1 of argv
   set b to item 2 of argv
-  set choices to {"Deploy to Clean Cloud", "Run locally", "Show details"}
-  set picked to choose from list choices with title t with prompt b default items {"Deploy to Clean Cloud"} OK button name "Continue" cancel button name "Cancel"
-  if picked is false then
-    return "cancel"
-  end if
-  set p to item 1 of picked
-  if p is "Deploy to Clean Cloud" then
+  display dialog b with title t buttons {"Cancel", "Run locally", "Deploy to Cloud"} default button "Deploy to Cloud" with icon note
+  set r to button returned of the result
+  if r is "Deploy to Cloud" then
     return "deploy"
-  else if p is "Run locally" then
+  else if r is "Run locally" then
     return "run"
   else
-    return "details"
+    return "cancel"
   end if
 end run"#
     } else {
@@ -121,6 +124,10 @@ end run"#
 }
 
 /// The one-screen summary shown above the buttons.
+///
+/// A server package has no "Show details" button — its three buttons go to the
+/// three actions — so its summary carries the declared worlds too. An
+/// application keeps the button, and the extra fields live behind it.
 fn summary(i: &Inspection) -> String {
     let mut s = String::new();
     if let Some(d) = &i.description {
@@ -129,6 +136,9 @@ fn summary(i: &Inspection) -> String {
     }
     s.push_str(&format!("Version    {}\n", i.version));
     s.push_str(&format!("Type       {}\n", i.kind_label()));
+    if i.is_server() && !i.worlds.is_empty() {
+        s.push_str(&format!("Worlds     {}\n", i.worlds.join(", ")));
+    }
     if let Some(v) = &i.runtime_resolved {
         s.push_str(&format!("Runtime    clean-runtime {v}\n"));
     }
