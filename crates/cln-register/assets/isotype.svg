@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#7B2FF7"/>
+      <stop offset="100%" stop-color="#0A6BFF"/>
+    </linearGradient>
+  </defs>
+  <!-- Three rounded bars with a knob at the right end, matching the Clean isotype. -->
+  <g fill="url(#g)">
+    <rect x="132" y="236" width="760" height="150" rx="75"/>
+    <rect x="132" y="437" width="760" height="150" rx="75"/>
+    <rect x="132" y="638" width="760" height="150" rx="75"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="817" cy="311" r="43"/>
+    <circle cx="817" cy="512" r="43"/>
+    <circle cx="817" cy="713" r="43"/>
+  </g>
+</svg>

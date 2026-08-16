@@ -53,6 +53,18 @@ use std::path::{Path, PathBuf};
 
 use crate::state::Extension;
 
+/// The Clean isotype, as a macOS icon.
+///
+/// Embedded rather than read from disk: `cln` is a single binary that must
+/// work on a machine with no Clean checkout, and an icon fetched at
+/// registration time would be one more thing to fail. 537 KB of the binary
+/// buys a Finder icon on every `.clapp`.
+const ICNS: &[u8] = include_bytes!("../assets/Clean.icns");
+
+/// The icon file's name inside the bundle, without the extension —
+/// `CFBundleIconFile` and `CFBundleTypeIconFile` both name it this way.
+const ICON_NAME: &str = "Clean";
+
 /// Where the bundle lives. `~/Applications/` is the per-user applications
 /// directory: no elevated privileges, and it does not collide with a
 /// system-wide install in `/Applications/`.
@@ -82,6 +94,8 @@ fn info_plist(version: &str) -> String {
             <string>{uti}</string>
             <key>UTTypeDescription</key>
             <string>{desc}</string>
+            <key>UTTypeIconFile</key>
+            <string>{icon}</string>
             <key>UTTypeConformsTo</key>
             <array>
                 <string>public.data</string>
@@ -97,6 +111,7 @@ fn info_plist(version: &str) -> String {
         </dict>"#,
             uti = ext.uti(),
             desc = ext.description(),
+            icon = ICON_NAME,
             ext = ext.as_str(),
         ));
 
@@ -108,6 +123,8 @@ fn info_plist(version: &str) -> String {
         <dict>
             <key>CFBundleTypeName</key>
             <string>{desc}</string>
+            <key>CFBundleTypeIconFile</key>
+            <string>{icon}</string>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>LSHandlerRank</key>
@@ -122,11 +139,13 @@ fn info_plist(version: &str) -> String {
             </array>
         </dict>"#,
             desc = ext.description(),
+            icon = ICON_NAME,
             uti = ext.uti(),
             ext = ext.as_str(),
         ));
     }
 
+    let icon = ICON_NAME;
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -144,6 +163,8 @@ fn info_plist(version: &str) -> String {
     <string>{version}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>{icon}</string>
     <!-- osacompile names the executable `droplet` when the script has an
          `on open` handler (`applet` when it does not). Naming anything else
          here leaves a bundle Finder cannot launch. -->
@@ -252,6 +273,13 @@ pub fn write_bundle(home: &Path, cln: &Path, version: &str) -> std::io::Result<P
         info_plist(version),
     )?;
 
+    // The plist names this file for both the app icon and the document icon,
+    // so a missing one leaves every .clapp showing the generic blank page.
+    // osacompile ships its own droplet.icns; ours replaces it.
+    let resources = bundle.join("Contents").join("Resources");
+    std::fs::create_dir_all(&resources)?;
+    std::fs::write(resources.join(format!("{ICON_NAME}.icns")), ICNS)?;
+
     Ok(bundle)
 }
 
@@ -326,6 +354,30 @@ mod tests {
 
         let plist = std::fs::read_to_string(bundle.join("Contents/Info.plist")).unwrap();
         assert!(plist.contains("<string>droplet</string>"));
+    }
+
+    /// The plist names an icon for the app and for every document type, so
+    /// the file it names has to exist — otherwise every `.clapp` shows the
+    /// generic blank-page icon and nothing reports why.
+    #[test]
+    fn the_bundle_carries_the_icon_its_plist_names() {
+        let home = tempdir().unwrap();
+        let bundle =
+            write_bundle(home.path(), Path::new("/Users/a/.cln/bin/cln"), "0.1.9").unwrap();
+
+        let icon = bundle
+            .join("Contents/Resources")
+            .join(format!("{ICON_NAME}.icns"));
+        assert!(icon.is_file(), "the plist names {ICON_NAME}.icns");
+
+        // A real icns, not a placeholder: the magic is "icns".
+        let bytes = std::fs::read(&icon).unwrap();
+        assert_eq!(&bytes[..4], b"icns");
+
+        let plist = std::fs::read_to_string(bundle.join("Contents/Info.plist")).unwrap();
+        assert!(plist.contains("CFBundleIconFile"));
+        assert!(plist.contains("CFBundleTypeIconFile"));
+        assert!(plist.contains("UTTypeIconFile"));
     }
 
     /// The document types must survive compilation: osacompile writes its own
