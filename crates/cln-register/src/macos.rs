@@ -62,7 +62,9 @@ use crate::state::Extension;
 /// logo's vector form, 60 × 12 on a 20 pitch; the bars are rounded, which the
 /// wordmark's square-cut bars are not, and they sit on a rounded-square tile
 /// rather than floating on transparency — the shape macOS icons take, and what
-/// gives the icon visible edges at every size.
+/// gives the icon visible edges at every size. Outside the tile's rounded
+/// corners the icon is fully transparent, so it composites cleanly on any
+/// Finder background rather than showing white shoulders on a dark one.
 /// `assets/source-logo.svg` is kept beside it as the reference.
 ///
 /// Embedded rather than read from disk: `cln` is a single binary that must
