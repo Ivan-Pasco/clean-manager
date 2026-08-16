@@ -65,9 +65,15 @@ fn status_on_a_fresh_machine_reports_nothing_registered() {
 /// A local release directory holding one runtime, so `cln install` succeeds
 /// offline. `CLN_RELEASES_DIR` points the installer at it.
 ///
+/// Only the macOS cases install a toolchain — elsewhere registration is
+/// unimplemented, so there is nothing to assert about what an install
+/// registered. Gated to match, because `-D warnings` in CI makes a helper that
+/// is dead on Linux a build failure rather than a lint.
+///
 /// The installer resolves a *packaged asset* named for the platform, plus its
 /// `.sha256` sidecar — the same shape the release workflow publishes — so the
 /// fixture builds a real tarball rather than dropping a loose binary.
+#[cfg(target_os = "macos")]
 fn local_release(dir: &std::path::Path) {
     let v = dir.join("runtime").join("9.9.9");
     std::fs::create_dir_all(&v).unwrap();
@@ -109,6 +115,7 @@ fn local_release(dir: &std::path::Path) {
 }
 
 /// SHA-256 of the fixture archive, so the installer's integrity check passes.
+#[cfg(target_os = "macos")]
 fn sha256_hex(bytes: &[u8]) -> String {
     use std::io::Write as _;
     let mut child = std::process::Command::new("shasum")
@@ -128,6 +135,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Install a runtime from a local release dir, with the opt-out controls the
 /// caller wants applied.
+#[cfg(target_os = "macos")]
 fn install_runtime(
     cln_home: &std::path::Path,
     home: &std::path::Path,
