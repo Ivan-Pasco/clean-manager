@@ -134,11 +134,29 @@ mod tests {
 
     /// A shell script standing in for a component binary.
     #[cfg(unix)]
+    /// Write an executable shell script and return its path.
+    ///
+    /// The descriptor is closed *before* the file is made executable, and the
+    /// executable bit is set via the open handle rather than by path. Linux
+    /// refuses to exec a file any process still holds open for writing
+    /// (`ETXTBSY`), and cargo runs these tests on parallel threads, so a
+    /// descriptor left open here surfaces as a "Text file busy" spawn failure
+    /// in whichever sibling test happens to exec at the wrong moment. That is
+    /// load-bearing rather than tidiness: dropping it implicitly at the end of
+    /// the function leaves the close racing the sibling's exec.
     fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
+        use std::io::Write as _;
         use std::os::unix::fs::PermissionsExt;
+
         let path = dir.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
+            .unwrap();
+        file.set_permissions(std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+
         path
     }
 
