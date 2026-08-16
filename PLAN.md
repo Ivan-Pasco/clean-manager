@@ -392,19 +392,24 @@ never prompt, but here the child *is* the user's program.
 - `cln mcp install` — write MCP client config for Claude Code, VS Code, Cursor.
 - `cln explain <CODE>` — dispatches to framework (which invokes compiler API per §00.4 dispatch table).
 
-**Registration runs at install time. This diverges from §00.12 and needs the
-spec owner's ruling.** §00.12 makes registration opt-in: the user runs `cln
-register`, or accepts a one-time prompt on their first `cln run` of a `.clapp`.
-Manager instead registers automatically at the end of `cln install`. The reason
-is that the double-click path is the demonstration that the toolchain works, and
-an association nobody knows to ask for is one nobody turns on. The prompt §00.12
-describes also cannot be shown where it matters most: the first time many users
-meet a `.clapp` is by double-clicking one, which has no terminal to prompt in.
-Registration is per-user, touches only `~/Applications` and `~/.cln/`, needs no
-elevation, and is undone by `cln unregister` — so the cost of being wrong is
-low. It remains a knowing divergence from the spec of record, recorded here
-rather than silently absorbed. **Either §00.12 should be amended to make
-registration automatic with an opt-out, or this should revert to opt-in.**
+**Registration runs at install time, per §00.12.** The spec was amended on
+2026-08-16 from opt-in to automatic-with-an-opt-out, on the owner's decision.
+`cln install` registers at the end of a successful install; the user declines
+with `cln install --no-register` or `CLN_NO_REGISTER=1`. The withdrawn opt-in
+prompt could not be shown in the case it was meant to serve — a user meeting a
+`.clapp` by double-clicking one has no terminal to answer it in.
+
+**An explicit `cln unregister` is remembered.** §00.12 forbids a later install
+from silently re-registering, which would force the user to decline again after
+every upgrade. The decision is recorded per-extension in
+`~/.cln/registrations/state.toml`; an explicit `cln register` clears it, since
+asking for the association back is unambiguous.
+
+**Manager's own housekeeping is not a decline.** Withdrawing the association
+when the last runtime is removed uses `Reason::Housekeeping`, which clears the
+record rather than marking it declined — otherwise reinstalling a runtime would
+leave double-click silently off with nothing to explain it. Only
+`cln unregister` records `Reason::UserRequested`.
 
 **A failed registration never fails an install.** The toolchain is fully usable
 from a terminal without an association, so a Launch Services hiccup or a

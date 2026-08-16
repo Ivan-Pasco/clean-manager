@@ -72,6 +72,12 @@ pub struct InstallArgs {
     /// Install the version but do not switch the active symlink to it.
     #[arg(long)]
     pub no_activate: bool,
+    /// Skip registering Clean file types with the OS (§00.12's opt-out).
+    ///
+    /// Registration is otherwise automatic, so a double-click works straight
+    /// after install. `CLN_NO_REGISTER=1` does the same for scripted installs.
+    #[arg(long)]
+    pub no_register: bool,
 }
 
 fn resolve_install_positionals(pos: &[String]) -> Result<(Option<KindArg>, String)> {
@@ -123,8 +129,8 @@ pub fn install(args: InstallArgs, env: &Env) -> Result<()> {
 
     // Bind .clapp/.serve so a double-click works straight after install,
     // rather than waiting for the user to discover a separate command
-    // (§00.12 diverges here — see PLAN.md). Never fails the install.
-    crate::verbs::os::register_after_install(env);
+    // (§00.12: automatic, with an opt-out). Never fails the install.
+    crate::verbs::os::register_after_install(env, args.no_register);
 
     Ok(())
 }

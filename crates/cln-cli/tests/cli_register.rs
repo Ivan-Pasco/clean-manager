@@ -62,6 +62,97 @@ fn status_on_a_fresh_machine_reports_nothing_registered() {
     assert!(text.contains("not implemented"), "{text}");
 }
 
+/// A local release directory holding one runtime, so `cln install` succeeds
+/// offline. `CLN_RELEASES_DIR` points the installer at it.
+///
+/// The installer resolves a *packaged asset* named for the platform, plus its
+/// `.sha256` sidecar — the same shape the release workflow publishes — so the
+/// fixture builds a real tarball rather than dropping a loose binary.
+fn local_release(dir: &std::path::Path) {
+    let v = dir.join("runtime").join("9.9.9");
+    std::fs::create_dir_all(&v).unwrap();
+
+    // Stage the binary, then tar it under the name the platform matcher wants.
+    let stage = dir.join("stage");
+    std::fs::create_dir_all(&stage).unwrap();
+    let bin = stage.join("clean-runtime");
+    std::fs::write(&bin, b"#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
+    let arch = if arch == "aarch64" { "arm64" } else { arch };
+    let asset = v.join(format!("clean-runtime-9.9.9-{os}-{arch}.tar.gz"));
+
+    let status = Command::new("tar")
+        .arg("czf")
+        .arg(&asset)
+        .arg("-C")
+        .arg(&stage)
+        .arg("clean-runtime")
+        .status()
+        .expect("tar should run");
+    assert!(status.success(), "failed to build the release fixture");
+
+    let bytes = std::fs::read(&asset).unwrap();
+    std::fs::write(
+        asset.with_file_name(format!(
+            "{}.sha256",
+            asset.file_name().unwrap().to_string_lossy()
+        )),
+        format!("{}  {}\n", sha256_hex(&bytes), asset.display()),
+    )
+    .unwrap();
+}
+
+/// SHA-256 of the fixture archive, so the installer's integrity check passes.
+fn sha256_hex(bytes: &[u8]) -> String {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new("shasum")
+        .args(["-a", "256"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("shasum should run");
+    child.stdin.take().unwrap().write_all(bytes).unwrap();
+    let out = child.wait_with_output().unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+/// Install a runtime from a local release dir, with the opt-out controls the
+/// caller wants applied.
+fn install_runtime(
+    cln_home: &std::path::Path,
+    home: &std::path::Path,
+    extra_args: &[&str],
+    no_register_env: Option<&str>,
+) -> Output {
+    // Held for the whole call: dropping it would delete the release tree out
+    // from under the child process.
+    let releases = tempfile::tempdir().unwrap();
+    local_release(releases.path());
+
+    let mut args = vec!["install", "runtime", "9.9.9"];
+    args.extend_from_slice(extra_args);
+
+    let mut cmd = Command::new(cln());
+    cmd.args(&args)
+        .env("CLN_HOME", cln_home)
+        .env("HOME", home)
+        .env("CLN_RELEASES_DIR", releases.path());
+    if let Some(v) = no_register_env {
+        cmd.env("CLN_NO_REGISTER", v);
+    }
+    cmd.output().expect("cln install should run")
+}
+
 /// Unregistering when nothing is registered must succeed: `cln uninstall`
 /// calls it unconditionally, on a machine that may never have opted in.
 #[test]
@@ -100,6 +191,118 @@ mod macos {
 
     fn bundle(home: &std::path::Path) -> PathBuf {
         home.join("Applications").join("Clean.app")
+    }
+
+    /// §00.12's default: installing registers, with no extra command.
+    #[test]
+    fn installing_registers_automatically() {
+        let cln_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+
+        let out = install_runtime(cln_home.path(), home.path(), &[], None);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(
+            bundle(home.path()).exists(),
+            "install must register: {}",
+            stdout(&out)
+        );
+    }
+
+    /// `--no-register` declines without disabling anything else.
+    #[test]
+    fn install_no_register_skips_registration() {
+        let cln_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+
+        let out = install_runtime(cln_home.path(), home.path(), &["--no-register"], None);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(
+            !bundle(home.path()).exists(),
+            "--no-register must not register"
+        );
+        // The install itself still happened.
+        assert!(stdout(&out).contains("runtime"), "{}", stdout(&out));
+    }
+
+    /// The environment opt-out, for scripted installs that cannot add a flag.
+    #[test]
+    fn cln_no_register_env_skips_registration() {
+        let cln_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+
+        let out = install_runtime(cln_home.path(), home.path(), &[], Some("1"));
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(
+            !bundle(home.path()).exists(),
+            "CLN_NO_REGISTER must be honored"
+        );
+    }
+
+    /// `CLN_NO_REGISTER=0` is not an opt-out — it reads as "no, don't skip".
+    #[test]
+    fn cln_no_register_zero_still_registers() {
+        let cln_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+
+        let out = install_runtime(cln_home.path(), home.path(), &[], Some("0"));
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(bundle(home.path()).exists(), "0 must not read as opt-out");
+    }
+
+    /// The load-bearing half of the opt-out: §00.12 forbids a later install
+    /// from silently undoing an explicit `cln unregister`.
+    #[test]
+    fn an_explicit_unregister_survives_a_later_install() {
+        let cln_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+
+        assert!(install_runtime(cln_home.path(), home.path(), &[], None)
+            .status
+            .success());
+        assert!(bundle(home.path()).exists());
+
+        // The user declines.
+        assert!(run(cln_home.path(), home.path(), &["unregister"])
+            .status
+            .success());
+        assert!(!bundle(home.path()).exists());
+
+        // A later install must respect that.
+        let out = install_runtime(cln_home.path(), home.path(), &[], None);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(
+            !bundle(home.path()).exists(),
+            "an install must not undo an explicit unregister: {}",
+            stdout(&out)
+        );
+    }
+
+    /// Asking for it back must work without needing to know about a flag.
+    #[test]
+    fn register_after_unregister_opts_back_in() {
+        let cln_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        fake_shim(cln_home.path());
+
+        assert!(run(cln_home.path(), home.path(), &["register"])
+            .status
+            .success());
+        assert!(run(cln_home.path(), home.path(), &["unregister"])
+            .status
+            .success());
+
+        // Explicit re-register clears the decline...
+        assert!(run(cln_home.path(), home.path(), &["register"])
+            .status
+            .success());
+        assert!(bundle(home.path()).exists());
+
+        // ...and a later install keeps registering.
+        std::fs::remove_dir_all(bundle(home.path())).unwrap();
+        assert!(install_runtime(cln_home.path(), home.path(), &[], None)
+            .status
+            .success());
+        assert!(bundle(home.path()).exists());
     }
 
     /// The core promise: after registering, an app bundle exists that Finder

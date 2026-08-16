@@ -86,7 +86,7 @@ pub fn register(args: RegisterArgs, env: &Env) -> Result<()> {
 pub struct UnregisterArgs {}
 
 pub fn unregister(_args: UnregisterArgs, env: &Env) -> Result<()> {
-    let outcome = reg::unregister(&env.layout).map_err(to_anyhow)?;
+    let outcome = reg::unregister(&env.layout, reg::Reason::UserRequested).map_err(to_anyhow)?;
     if outcome.unchanged {
         println!("nothing was registered");
     } else {
@@ -134,6 +134,23 @@ fn status(env: &Env) -> Result<()> {
     Ok(())
 }
 
+/// `CLN_NO_REGISTER` — the environment half of §00.12's opt-out.
+///
+/// Exists for scripted and CI installs that never want manager to touch the
+/// OS, and which cannot easily add a flag to a command they do not construct.
+/// Any value except empty, `0`, or `false` counts as set, so the common
+/// `CLN_NO_REGISTER=1` and a bare `CLN_NO_REGISTER=` behave as a reader would
+/// expect.
+fn no_register_env() -> bool {
+    match std::env::var("CLN_NO_REGISTER") {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            !(v.is_empty() || v == "0" || v == "false")
+        }
+        Err(_) => false,
+    }
+}
+
 /// Carry the library's `help:` line through to the CLI's error rendering.
 fn to_anyhow(e: reg::RegisterError) -> anyhow::Error {
     match e.remedy() {
@@ -146,7 +163,7 @@ fn to_anyhow(e: reg::RegisterError) -> anyhow::Error {
 ///
 /// Called by the install verb so a user who installs the toolchain can
 /// double-click a `.clapp` immediately — the association is not a separate
-/// manual step (§00.12 diverges here; see PLAN.md).
+/// manual step (§00.12: automatic, with an opt-out).
 ///
 /// **Registration failure never fails an install.** The toolchain is fully
 /// usable from a terminal without an association, so a Launch Services hiccup,
@@ -154,11 +171,28 @@ fn to_anyhow(e: reg::RegisterError) -> anyhow::Error {
 /// working install reported as failed. Anything that goes wrong is reported as
 /// a warning naming `cln register`, so it is visible and retryable rather than
 /// silent.
-pub fn register_after_install(env: &Env) {
+pub fn register_after_install(env: &Env, opted_out: bool) {
     if !reg::supported() {
         // Not a warning: this is the expected state on Windows and Linux
         // today, and an install there is not degraded by it.
         return;
+    }
+
+    // `--no-register` / `CLN_NO_REGISTER=1`, per §00.12's opt-out table.
+    if opted_out || no_register_env() {
+        return;
+    }
+
+    // An explicit `cln unregister` is remembered: §00.12 forbids an install
+    // from silently re-registering, which would force the user to decline
+    // again after every upgrade.
+    match reg::status(&env.layout) {
+        Ok(s) if s.state.declined_all() => return,
+        Ok(_) => {}
+        // A state file we cannot read is not a reason to skip: the user may
+        // never have declined at all. Registration below reports its own
+        // failure if there is a real problem.
+        Err(_) => {}
     }
 
     let Ok(cln) = binary_to_bind(env) else {
@@ -194,7 +228,7 @@ pub fn unregister_after_last_runtime(env: &Env) {
     if !reg::supported() {
         return;
     }
-    match reg::unregister(&env.layout) {
+    match reg::unregister(&env.layout, reg::Reason::Housekeeping) {
         Ok(o) if !o.unchanged => {
             println!("removed file associations (no runtime left to run artifacts)");
         }

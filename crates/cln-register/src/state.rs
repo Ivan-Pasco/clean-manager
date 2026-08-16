@@ -78,6 +78,15 @@ impl fmt::Display for Extension {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Record {
     pub registered: bool,
+    /// The user ran `cln unregister`, so `cln install` MUST NOT re-register.
+    ///
+    /// §00.12: an install that silently undid an explicit `cln unregister`
+    /// would make the opt-out meaningless — the user would have to decline
+    /// again after every upgrade. Recorded per-extension alongside
+    /// `registered` so the two always round-trip together; a later
+    /// `cln register` clears it, because asking for it back is unambiguous.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub declined: bool,
     /// What was created on the OS side — the `.app` bundle path on macOS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub os_path: Option<PathBuf>,
@@ -90,6 +99,22 @@ pub struct Record {
     /// keeps the state file deterministic under test.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registered_at: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+impl Record {
+    /// The record left behind by `cln unregister`: not registered, and
+    /// explicitly declined so a later install does not undo the choice.
+    pub fn declined_record() -> Self {
+        Record {
+            registered: false,
+            declined: true,
+            ..Default::default()
+        }
+    }
 }
 
 /// The whole `state.toml`, keyed by extension name (`clapp`, `serve`).
@@ -143,6 +168,20 @@ impl State {
     /// True when this extension is recorded as registered.
     pub fn is_registered(&self, ext: Extension) -> bool {
         self.get(ext).is_some_and(|r| r.registered)
+    }
+
+    /// True when the user explicitly unregistered this extension.
+    ///
+    /// `cln install` consults this before auto-registering, so a decision the
+    /// user made once is not undone by the next upgrade.
+    pub fn is_declined(&self, ext: Extension) -> bool {
+        self.get(ext).is_some_and(|r| r.declined)
+    }
+
+    /// True when the user has declined every extension — the state an install
+    /// must treat as "do not register".
+    pub fn declined_all(&self) -> bool {
+        Extension::ALL.iter().all(|e| self.is_declined(*e))
     }
 }
 
@@ -205,6 +244,7 @@ mod tests {
             Extension::Clapp,
             Record {
                 registered: true,
+                declined: false,
                 os_path: Some(PathBuf::from("/Users/a/Applications/Clean.app")),
                 bound_binary: Some(PathBuf::from("/Users/a/.cln/bin/cln")),
                 registered_at: Some("2026-08-16T00:00:00Z".into()),
@@ -229,6 +269,7 @@ mod tests {
                 ext,
                 Record {
                     registered: true,
+                    declined: false,
                     os_path: Some(PathBuf::from("/tmp/Clean.app")),
                     bound_binary: Some(PathBuf::from("/tmp/cln")),
                     registered_at: Some("2026-08-16T00:00:00Z".into()),

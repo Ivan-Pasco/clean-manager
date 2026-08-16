@@ -23,8 +23,16 @@
 //!
 //! [`register`] fully regenerates the OS-side artifacts, so running it twice
 //! converges instead of accumulating, and an upgrade rebinds the association to
-//! the new binary path. [`unregister`] removes them and clears the state, so an
-//! association never outlives the toolchain it points at.
+//! the new binary path. [`unregister`] removes them, so an association never
+//! outlives the toolchain it points at.
+//!
+//! # Registration is automatic, with an opt-out
+//!
+//! §00.12 has `cln install` register at the end of a successful install, so a
+//! double-click works without a separate command. The user declines with
+//! `cln install --no-register`, `CLN_NO_REGISTER=1`, or by running
+//! `cln unregister` — which is remembered via [`Reason::UserRequested`], so a
+//! later install does not silently undo the choice.
 
 pub mod state;
 pub mod unsupported;
@@ -114,12 +122,28 @@ pub fn register(
     register_impl(layout, cln, version, now)
 }
 
+/// Why a registration is being removed.
+///
+/// The distinction matters because §00.12 requires an explicit `cln
+/// unregister` to survive later installs, while manager's own housekeeping
+/// must not: if removing the last runtime were recorded as the user declining,
+/// reinstalling a runtime would leave double-click silently off with nothing
+/// to explain it.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Reason {
+    /// The user ran `cln unregister`. Remembered; blocks auto-registration.
+    UserRequested,
+    /// Manager withdrew an association it could no longer honor. Forgotten;
+    /// a later install registers again as normal.
+    Housekeeping,
+}
+
 /// Remove every Clean registration.
 ///
 /// Safe to call when nothing is registered — that is the normal case during an
 /// uninstall on a machine that never opted in, and it must not fail there.
-pub fn unregister(layout: &Layout) -> Result<Outcome, RegisterError> {
-    unregister_impl(layout)
+pub fn unregister(layout: &Layout, reason: Reason) -> Result<Outcome, RegisterError> {
+    unregister_impl(layout, reason)
 }
 
 /// Report what is registered, and whether the OS still agrees.
@@ -196,6 +220,10 @@ fn register_impl(
             ext,
             Record {
                 registered: true,
+                // Asking to register is unambiguous: it clears an earlier
+                // decline, so `cln register` after `cln unregister` works
+                // without the user having to know about the flag.
+                declined: false,
                 os_path: Some(bundle.clone()),
                 bound_binary: Some(cln.to_path_buf()),
                 registered_at: Some(now.to_string()),
@@ -213,7 +241,7 @@ fn register_impl(
 }
 
 #[cfg(target_os = "macos")]
-fn unregister_impl(layout: &Layout) -> Result<Outcome, RegisterError> {
+fn unregister_impl(layout: &Layout, reason: Reason) -> Result<Outcome, RegisterError> {
     let mut st = state::load(layout)?;
     let recorded = st
         .get(Extension::Clapp)
@@ -228,8 +256,14 @@ fn unregister_impl(layout: &Layout) -> Result<Outcome, RegisterError> {
         std::fs::remove_dir_all(&recorded).map_err(|source| RegisterError::Bundle { source })?;
     }
 
+    // A user-requested removal is remembered so a later `cln install` honors
+    // it (§00.12); housekeeping clears the entry instead, since a cleared
+    // record reads as "never registered" and auto-registers again.
     for ext in Extension::ALL {
-        st.remove(ext);
+        match reason {
+            Reason::UserRequested => st.set(ext, Record::declined_record()),
+            Reason::Housekeeping => st.remove(ext),
+        }
     }
     state::save(layout, &st)?;
 
@@ -308,10 +342,13 @@ fn register_impl(
 /// the toolchain. On a platform that never registered anything there is nothing
 /// to undo, and failing here would make uninstall fail for no reason.
 #[cfg(not(target_os = "macos"))]
-fn unregister_impl(layout: &Layout) -> Result<Outcome, RegisterError> {
+fn unregister_impl(layout: &Layout, reason: Reason) -> Result<Outcome, RegisterError> {
     let mut st = state::load(layout)?;
     for ext in Extension::ALL {
-        st.remove(ext);
+        match reason {
+            Reason::UserRequested => st.set(ext, Record::declined_record()),
+            Reason::Housekeeping => st.remove(ext),
+        }
     }
     state::save(layout, &st)?;
     Ok(Outcome {
@@ -356,7 +393,7 @@ mod tests {
     #[test]
     fn unregistering_when_nothing_is_registered_succeeds() {
         let (_h, l) = layout();
-        let out = unregister(&l).unwrap();
+        let out = unregister(&l, Reason::UserRequested).unwrap();
         assert!(out.unchanged);
         assert!(!state::load(&l).unwrap().is_registered(Extension::Clapp));
     }
@@ -371,6 +408,7 @@ mod tests {
             Extension::Clapp,
             Record {
                 registered: true,
+                declined: false,
                 os_path: Some(PathBuf::from("/nonexistent/Clean.app")),
                 bound_binary: Some(PathBuf::from("/nonexistent/cln")),
                 registered_at: Some("2026-08-16T00:00:00Z".into()),
