@@ -132,50 +132,75 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::tempdir;
 
+    /// Serializes script creation against process spawning.
+    ///
+    /// See [`script`] for why this exists. Held for the whole write in
+    /// [`script`], and across the `fork`/`exec` in [`dispatch_serialized`].
+    #[cfg(unix)]
+    static EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Write an executable shell script standing in for a component binary,
     /// and return its path.
     ///
-    /// # Why this writes to a temporary name and renames
+    /// # Why this takes a lock
     ///
     /// Linux refuses to `exec` a file that any process holds open for writing,
-    /// with `ETXTBSY`. The subtlety is that the offending descriptor need not
-    /// be this test's: cargo runs tests on parallel threads, `Command::spawn`
-    /// forks, and a fork started by thread A inherits every descriptor open in
-    /// thread B — including a script B is still writing. B's file then looks
-    /// busy to A's exec, and the test that fails is whichever one happened to
-    /// spawn at the wrong moment. That is why this surfaced as a flake in CI
-    /// and never locally: it needs two threads to line up.
+    /// with `ETXTBSY`. The descriptor that triggers it need not belong to the
+    /// test that fails: cargo runs tests on parallel threads, `Command::spawn`
+    /// forks, and **a fork inherits every descriptor open in the whole
+    /// process** — including one another thread is still using to write a
+    /// different script, in a different directory. The forked child holds that
+    /// inherited fd until it execs, so the writer's file looks busy to the
+    /// writer's own exec a moment later. Whichever test spawns at the wrong
+    /// moment is the one that fails, which is why this reproduced only under
+    /// CI's scheduling and never locally.
     ///
-    /// Closing the handle promptly narrows the window but cannot close it,
-    /// because the race is against another thread's fork rather than against
-    /// this function's own cleanup. Writing to a scratch name and `rename`ing
-    /// into place removes the race outright: the path that gets exec'd is a
-    /// fresh directory entry whose inode was never open for writing under the
-    /// name any sibling could have inherited. Rename is atomic on POSIX, so
-    /// the file is either absent or complete and executable, never mid-write.
+    /// Ordering within this function cannot fix that, because the conflicting
+    /// descriptor belongs to a different thread — closing promptly, staging
+    /// and renaming, or setting the mode late all narrow the window without
+    /// closing it. The fix is to make writing and spawning mutually exclusive,
+    /// so no fork is ever in flight while a script file is open for writing.
+    ///
+    /// `O_CLOEXEC` would be the other principled fix — Rust sets it on files it
+    /// opens — but it does not help here: the inherited fd is closed only *at*
+    /// exec, and `ETXTBSY` is raised by that same exec.
     #[cfg(unix)]
     fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
         use std::io::Write as _;
         use std::os::unix::fs::PermissionsExt;
 
         let path = dir.join(name);
-        let staging = dir.join(format!(".{name}.staging"));
 
-        // Write the contents with the executable bit *off*, so that even if a
-        // sibling's fork inherits this descriptor, the file it holds is not an
-        // executable anyone will try to run.
-        let mut file = std::fs::File::create(&staging).unwrap();
+        // Poisoning is irrelevant: a panicking test has already failed, and
+        // the lock guards no invariant beyond "no fork while writing".
+        let _guard = EXEC_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let mut file = std::fs::File::create(&path).unwrap();
         file.write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
+            .unwrap();
+        file.set_permissions(std::fs::Permissions::from_mode(0o755))
             .unwrap();
         file.sync_all().unwrap();
         drop(file);
 
-        // Set the executable bit by path, after every handle is closed. The
-        // file is now executable and held open by nobody.
-        std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        std::fs::rename(&staging, &path).unwrap();
         path
+    }
+
+    /// [`dispatch`], with the spawn serialized against [`script`]'s writes.
+    ///
+    /// Every test that runs one of these scripts goes through this rather than
+    /// calling `dispatch` directly, so the fork cannot overlap a sibling's
+    /// write. Tests that spawn a binary they did not just write (a missing
+    /// path, say) do not need it.
+    #[cfg(unix)]
+    fn dispatch_serialized(
+        binary: &Path,
+        args: &[&str],
+        cwd: Option<&Path>,
+        env: &[(&str, String)],
+    ) -> Result<Outcome, DispatchError> {
+        let _guard = EXEC_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        dispatch(binary, args, cwd, env)
     }
 
     #[test]
@@ -184,7 +209,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let bin = script(tmp.path(), "fake", r#"echo '{"status":"ok"}'"#);
 
-        let out = dispatch(&bin, &[] as &[&str], None, &[]).unwrap();
+        let out = dispatch_serialized(&bin, &[] as &[&str], None, &[]).unwrap();
         assert_eq!(out.code, 0);
         assert!(out.success());
         assert_eq!(out.stdout.trim(), r#"{"status":"ok"}"#);
@@ -197,7 +222,7 @@ mod tests {
         // Exit 2 is the framework's "invoked wrongly" — it must survive.
         let bin = script(tmp.path(), "fake", "exit 2");
 
-        let out = dispatch(&bin, &[] as &[&str], None, &[]).unwrap();
+        let out = dispatch_serialized(&bin, &[] as &[&str], None, &[]).unwrap();
         assert_eq!(out.code, 2);
         assert!(!out.success());
     }
@@ -208,7 +233,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let bin = script(tmp.path(), "fake", r#"echo "$@""#);
 
-        let out = dispatch(&bin, &["build", "./app", "--offline"], None, &[]).unwrap();
+        let out = dispatch_serialized(&bin, &["build", "./app", "--offline"], None, &[]).unwrap();
         assert_eq!(out.stdout.trim(), "build ./app --offline");
     }
 
@@ -220,7 +245,7 @@ mod tests {
         let work = tmp.path().join("work");
         std::fs::create_dir_all(&work).unwrap();
 
-        let out = dispatch(&bin, &[] as &[&str], Some(&work), &[]).unwrap();
+        let out = dispatch_serialized(&bin, &[] as &[&str], Some(&work), &[]).unwrap();
         assert_eq!(
             std::fs::canonicalize(out.stdout.trim()).unwrap(),
             std::fs::canonicalize(&work).unwrap()
@@ -233,7 +258,8 @@ mod tests {
         let tmp = tempdir().unwrap();
         let bin = script(tmp.path(), "fake", r#"echo "$CLN_OFFLINE""#);
 
-        let out = dispatch(&bin, &[] as &[&str], None, &[("CLN_OFFLINE", "1".into())]).unwrap();
+        let out = dispatch_serialized(&bin, &[] as &[&str], None, &[("CLN_OFFLINE", "1".into())])
+            .unwrap();
         assert_eq!(out.stdout.trim(), "1");
     }
 
@@ -251,7 +277,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let bin = script(tmp.path(), "fake", r#"printf '\xff\xfe'"#);
 
-        let out = dispatch(&bin, &[] as &[&str], None, &[]).unwrap();
+        let out = dispatch_serialized(&bin, &[] as &[&str], None, &[]).unwrap();
         assert_eq!(out.code, 0);
         assert!(!out.stdout.is_empty(), "lossy conversion keeps the bytes");
     }
@@ -263,7 +289,7 @@ mod tests {
         // SIGKILL leaves no exit code; a naive unwrap_or(0) would read as success.
         let bin = script(tmp.path(), "fake", "kill -9 $$");
 
-        let out = dispatch(&bin, &[] as &[&str], None, &[]).unwrap();
+        let out = dispatch_serialized(&bin, &[] as &[&str], None, &[]).unwrap();
         assert!(!out.success(), "a killed build must not look successful");
         assert_eq!(out.code, 128 + 9);
     }
