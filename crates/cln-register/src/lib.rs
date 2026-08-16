@@ -207,6 +207,24 @@ fn register_impl(
     now: &str,
 ) -> Result<Outcome, RegisterError> {
     let home = home_dir()?;
+    let bundle = macos::bundle_path(&home);
+
+    // Withdraw the previous registration *before* the bundle is rewritten.
+    //
+    // `lsregister -f` adds a claim; it does not replace the one already there.
+    // Re-registering therefore accumulates duplicate claims on the same UTI,
+    // and once several exist the type goes `inactive` and Finder falls back to
+    // the generic icon for whatever the type conforms to — a `.clapp` starts
+    // showing the system ZIP icon, because the UTI conforms to `public.archive`.
+    // The association still works, so nothing fails; only the icon is wrong,
+    // which makes this easy to misread as an icon bug.
+    //
+    // Ignored on failure: there may be nothing registered yet, which is the
+    // normal first-install case.
+    if bundle.exists() {
+        let _ = unregister_with_launch_services(&bundle);
+    }
+
     let bundle = macos::write_bundle(&home, cln, version)
         .map_err(|source| RegisterError::Bundle { source })?;
 

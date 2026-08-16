@@ -96,10 +96,15 @@ fn info_plist(version: &str) -> String {
             <string>{desc}</string>
             <key>UTTypeIconFile</key>
             <string>{icon}</string>
+            <!-- Conforms to `public.data` only, deliberately NOT to
+                 `public.archive`. A `.clapp` is a ZIP underneath, so claiming
+                 `public.archive` is technically true — but conformance is what
+                 macOS falls back to, so it hands the type the system's archive
+                 icon and offers "unzip" in the Finder verbs. A user holding a
+                 `.clapp` has a program, not a folder of files to extract. -->
             <key>UTTypeConformsTo</key>
             <array>
                 <string>public.data</string>
-                <string>public.archive</string>
             </array>
             <key>UTTypeTagSpecification</key>
             <dict>
@@ -405,6 +410,21 @@ mod tests {
         }
         assert!(plist.contains("LSHandlerRank"));
         assert!(plist.contains(BUNDLE_ID));
+        // Conformance decides the fallback icon: claiming `public.archive`
+        // hands `.clapp` the system ZIP icon, which is what a user reported
+        // seeing instead of the Clean isotype. Checked on the declaration
+        // rather than the whole file, since the comment above it says the
+        // word too.
+        let conforms = plist
+            .split("<key>UTTypeConformsTo</key>")
+            .nth(1)
+            .and_then(|t| t.split("</array>").next())
+            .unwrap_or("");
+        assert!(
+            !conforms.contains("public.archive"),
+            "a .clapp must not conform to public.archive: {conforms}"
+        );
+        assert!(conforms.contains("public.data"));
     }
 
     /// §00.12: `.wasm` MUST NOT be claimed under any circumstance.
