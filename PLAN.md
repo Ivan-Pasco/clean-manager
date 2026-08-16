@@ -176,7 +176,7 @@ clean-manager/
 | MGR-02 (bounded on-disk footprint), §00.2 | `cln-layout` (only crate allowed to write outside cwd) |
 | MGR-03 (file associations), §00.12 | `cln-register` |
 | MGR-04 (runtime as managed artifact), §00.13 | `cln-install`, `cln-run` |
-| MGR-05 (`.clapp` / `.serve`), §00.14 | `cln-run::manifest`, `cln-run::extract` (read side); framework owns write side |
+| MGR-05 (`.clapp`, both kinds), §00.14 | `cln-run::manifest`, `cln-run::extract`, `cln-run::inspect` (read side); framework owns write side |
 | §00.5 resolution + fetching | `cln-resolver`, `cln-install::download` |
 | §00.6 install + shell integration | `cln-shell` |
 | §00.7 version matrix | `cln-install::channels`, `cln-doctor::checks` |

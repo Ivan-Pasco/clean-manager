@@ -19,24 +19,28 @@ use serde::{Deserialize, Serialize};
 /// wider WebAssembly ecosystem — and the cheapest way to keep a future caller
 /// from passing `"wasm"` into a registration routine is to make the type
 /// system refuse to represent it.
+///
+/// **There is one compiled extension.** `.serve` was retired by §00.14 P-1:
+/// both kinds of package are `.clapp`, and `manifest.toml`'s `kind` field
+/// distinguishes an application from a server bundle. The extension was never
+/// the discriminator — `cln run` and `cln open` both read the manifest — so a
+/// second extension carried the same information twice and doubled the format
+/// to version.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Extension {
-    /// A Clean application bundle (§00.14).
+    /// A Clean package: an application or a server bundle (§00.14).
     Clapp,
-    /// A Clean server-deploy bundle (§00.14).
-    Serve,
 }
 
 impl Extension {
     /// Every extension manager registers. `.wasm` and `.cln` are deliberately
     /// absent — see the type docs and §00.12's table.
-    pub const ALL: [Extension; 2] = [Extension::Clapp, Extension::Serve];
+    pub const ALL: [Extension; 1] = [Extension::Clapp];
 
     /// The extension without its leading dot, as it appears on disk.
     pub fn as_str(self) -> &'static str {
         match self {
             Extension::Clapp => "clapp",
-            Extension::Serve => "serve",
         }
     }
 
@@ -47,22 +51,19 @@ impl Extension {
     pub fn uti(self) -> &'static str {
         match self {
             Extension::Clapp => "dev.cleanlanguage.clapp",
-            Extension::Serve => "dev.cleanlanguage.serve",
         }
     }
 
     /// A human-readable description, shown by Finder in the Kind column.
     pub fn description(self) -> &'static str {
         match self {
-            Extension::Clapp => "Clean Application",
-            Extension::Serve => "Clean Server Bundle",
+            Extension::Clapp => "Clean Package",
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim_start_matches('.').to_ascii_lowercase().as_str() {
             "clapp" => Some(Extension::Clapp),
-            "serve" => Some(Extension::Serve),
             _ => None,
         }
     }
@@ -255,7 +256,6 @@ mod tests {
         let back = load(&l).unwrap();
         assert_eq!(back, s);
         assert!(back.is_registered(Extension::Clapp));
-        assert!(!back.is_registered(Extension::Serve));
     }
 
     /// PLAN.md §5 requires deterministic writes; a map iteration order that
@@ -306,7 +306,9 @@ mod tests {
         assert!(Extension::parse(".wasm").is_none());
         assert!(Extension::parse("cln").is_none());
         assert_eq!(Extension::parse(".clapp"), Some(Extension::Clapp));
-        assert_eq!(Extension::parse("SERVE"), Some(Extension::Serve));
+        // .serve was retired by §00.14 P-1; it must no longer parse.
+        assert!(Extension::parse("serve").is_none());
+        assert!(Extension::parse(".serve").is_none());
     }
 
     #[test]

@@ -27,6 +27,7 @@
 pub mod artifact;
 pub mod devconfig;
 pub mod extract;
+pub mod inspect;
 pub mod invoke;
 pub mod manifest;
 pub mod runtime;
@@ -37,6 +38,7 @@ use cln_layout::Layout;
 
 pub use artifact::{detect, Artifact, DetectError};
 pub use extract::{extract, ExtractError, Extracted};
+pub use inspect::{inspect, Inspection};
 pub use invoke::{exit_code, invoke, Invocation, InvokeError};
 pub use manifest::{Entry, Kind, Manifest, ManifestError};
 pub use runtime::{resolve_runtime, ResolvedRuntime, RuntimeError, RuntimeSource};
@@ -76,6 +78,9 @@ pub enum RunError {
 
     #[error("running a project directory is not supported yet")]
     ProjectDirectory { path: PathBuf },
+
+    #[error("{} is a bare component, not a package", .path.display())]
+    NotAPackage { path: PathBuf },
 }
 
 impl RunError {
@@ -94,6 +99,10 @@ impl RunError {
                 "run `cln build {}` first, then `cln run` the .clapp it produces",
                 path.display()
             )),
+            RunError::NotAPackage { .. } => Some(
+                "a bare .wasm carries no manifest to inspect; run it with `cln run <file>.wasm`"
+                    .into(),
+            ),
             RunError::Cache { .. } => None,
         }
     }
@@ -256,7 +265,7 @@ pub fn run(path: &Path, opts: &Options, layout: &Layout) -> Result<i32, RunError
 }
 
 /// `~/.cln/cache/run/` — where bundles are unpacked (§00.13 step 3).
-fn run_cache(layout: &Layout) -> PathBuf {
+pub(crate) fn run_cache(layout: &Layout) -> PathBuf {
     layout.cache_dir().join("run")
 }
 

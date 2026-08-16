@@ -333,20 +333,35 @@ mod macos {
 
         let b = bundle(home.path());
         assert!(b.join("Contents/Info.plist").is_file());
-        assert!(b.join("Contents/MacOS/cln-open").is_file());
+        // `osacompile` names the executable `droplet` for a script with an
+        // `on open` handler. The handler is the point: macOS delivers the
+        // double-clicked file as an Apple Event, not as argv.
+        assert!(b.join("Contents/MacOS/droplet").is_file());
 
-        // It must invoke the stable shim, not a transient build path.
-        let launcher = std::fs::read_to_string(b.join("Contents/MacOS/cln-open")).unwrap();
+        // It must invoke the stable shim, not a transient build path. The
+        // compiled script stores its strings as UTF-16, so this decompiles
+        // rather than grepping bytes — which also proves the script compiled
+        // to something valid.
+        let out = Command::new("osadecompile")
+            .arg(&b)
+            .output()
+            .expect("osadecompile should run");
+        let text = String::from_utf8_lossy(&out.stdout);
         assert!(
-            launcher.contains(&cln_home.path().join("bin/cln").display().to_string()),
-            "the launcher must call the ~/.cln/bin/cln shim"
+            text.contains("on open"),
+            "the droplet must handle the open event: {text}"
+        );
+        assert!(
+            text.contains(&cln_home.path().join("bin/cln").display().to_string()),
+            "the droplet must call the ~/.cln/bin/cln shim: {text}"
         );
 
         // And the state file records it, so unregister knows what to remove.
         let state =
             std::fs::read_to_string(cln_home.path().join("registrations/state.toml")).unwrap();
         assert!(state.contains("[clapp]"), "{state}");
-        assert!(state.contains("[serve]"), "{state}");
+        // `.serve` was retired by §00.14 P-1: one compiled extension.
+        assert!(!state.contains("[serve]"), "{state}");
     }
 
     /// Reinstalling or upgrading must not duplicate or corrupt the

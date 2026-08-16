@@ -10,6 +10,7 @@ use clap::{Parser, Subcommand};
 
 mod env;
 mod output;
+mod ui;
 mod verbs;
 
 /// Every user-visible argv shape lives here.
@@ -57,6 +58,13 @@ enum Cmd {
     /// Package a built project into a distributable archive.
     Package(verbs::project::BuildArgs),
 
+    /// Show what a package is: kind, version, runtime, signature.
+    Inspect(verbs::pkg::InspectArgs),
+
+    /// Open a package the way a double-click does: show it, then offer
+    /// the actions valid for its kind.
+    Open(verbs::pkg::OpenArgs),
+
     /// Register Clean file types with the OS so double-click runs them.
     ///
     /// Runs automatically during `cln install`; this is for re-running it or
@@ -94,6 +102,8 @@ fn main() -> ExitCode {
         Cmd::Build(a) => verbs::project::build(a, &env),
         Cmd::Package(a) => verbs::project::package(a, &env),
         Cmd::Run(a) => verbs::run::run(a, &env),
+        Cmd::Inspect(a) => verbs::pkg::inspect(a, &env),
+        Cmd::Open(a) => verbs::pkg::open(a, &env),
         Cmd::Register(a) => verbs::os::register(a, &env).map(|()| ExitCode::SUCCESS),
         Cmd::Unregister(a) => verbs::os::unregister(a, &env).map(|()| ExitCode::SUCCESS),
     };

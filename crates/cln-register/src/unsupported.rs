@@ -62,10 +62,11 @@ mod tests {
         assert!(m.contains("not implemented"));
     }
 
+    /// One compiled extension, per §00.14 P-1.
     #[test]
-    fn the_message_mentions_both_extensions() {
+    fn the_message_names_the_package_extension() {
         let m = message();
         assert!(m.contains(".clapp"));
-        assert!(m.contains(".serve"));
+        assert!(!m.contains(".serve"), "`.serve` was retired");
     }
 }
