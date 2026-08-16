@@ -29,15 +29,20 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
-      # The dispatch tests run the real `cln` against `testing/fake-framework`,
-      # copying its `clean-framework` binary into a temp toolchain. That binary
-      # has to be built explicitly: `cargo test` builds the binaries of crates
-      # it *tests*, and fake-framework is bin-only with no tests of its own, so
-      # neither `--workspace` nor `--all-targets` produces it. Skipping this
+      # The dispatch and run tests drive the real `cln` against the doubles in
+      # testing/, copying their binaries into a temp toolchain. Those binaries
+      # have to be built explicitly: `cargo test` builds the binaries of crates
+      # it *tests*, and both doubles are bin-only with no tests of their own, so
+      # neither `--workspace` nor `--all-targets` produces them. Skipping this
       # leaves the suite green on any machine where an earlier build happened to
-      # leave the artifact in target/, and red on a clean checkout like CI.
+      # leave the artifacts in target/, and red on a clean checkout like CI.
+      #
+      # Every new double needs a `-p` here. The failure mode is invisible
+      # locally and only appears on a clean checkout, so the test helpers that
+      # locate these binaries assert their presence with that hint rather than
+      # failing on a bare NotFound.
       - name: build test doubles
-        run: cargo build --locked -p fake-framework
+        run: cargo build --locked -p fake-framework -p fake-runtime
 
       - name: test
         run: cargo test --locked --workspace

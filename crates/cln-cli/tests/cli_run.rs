@@ -29,8 +29,10 @@ fn fake_runtime() -> PathBuf {
     let binary = dir.join("clean-runtime");
     assert!(
         binary.is_file(),
-        "fake-runtime is not built at {}; `cargo test` builds workspace binaries, \
-         so this means the testing/fake-runtime member is missing from the workspace",
+        "fake-runtime is not built at {}. `cargo test` builds the binaries of crates it \
+         *tests*, and fake-runtime is bin-only, so neither `--workspace` nor `--all-targets` \
+         produces it. Run `cargo build -p fake-runtime` first; CI does this in its \
+         'build test doubles' step.",
         binary.display()
     );
     binary
