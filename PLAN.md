@@ -458,6 +458,72 @@ the case that actually breaks double-click, since the association would then
 open a window only to report that no runtime can be resolved. Manager withdraws
 the association there and lets Finder fall back to its normal behavior.
 
+**Unregister removes only a bundle this `~/.cln` recorded creating.** When the
+state file names no path, there is nothing of ours to remove — manager must not
+delete an application it cannot show it installed. The earlier fallback to
+`$HOME/Applications/Clean.app` made "unregister with an empty state" mean
+"delete whatever bundle sits at the default location", and since every test runs
+with a tempdir `CLN_HOME` and therefore an empty state, each test run deleted
+the developer's real registration. That failure surfaced far from its cause:
+tests passed, and double-click broke later, in Finder.
+
+**Registering withdraws the previous claim first.** `lsregister -f` *adds* a
+claim on a UTI rather than replacing the one already there, so re-registration
+accumulated claims — this machine reached 112 on `dev.cleanlanguage.clapp`, at
+which point the type read `inactive` and Finder stopped resolving our icon at
+all. `register_impl` unregisters the existing bundle before writing the new one.
+
+**Tests withdraw their own claims on drop, and the env guard is not enough.**
+`osacompile` ad-hoc signs the droplet it builds, and signing registers that
+bundle with Launch Services. That is a side effect of *building* the droplet, so
+it never reaches our `lsregister` call and `CLN_REGISTER_SKIP_LSREGISTER` cannot
+suppress it; every test run left a claim pointing into a tempdir deleted seconds
+later, leaking about 7 per run. A `Registered` drop guard in both suites
+withdraws the claim explicitly. Both mechanisms are kept: the env guard stops
+the ordinary registration path, the drop guard covers the signing side effect,
+and neither covers the other. The guard is `cfg`-gated to macOS to match its
+construction sites — ungated, it is a never-constructed struct that `-D
+warnings` turns into a CI build failure on Linux.
+
+**The exported type conforms to `public.data`, not `public.archive`.** A
+`.clapp` is a ZIP underneath, so the archive conformance was technically true —
+but conformance is exactly what macOS falls back to when it cannot resolve a
+type's own icon, which is how these came to show the system ZIP icon, and it
+also puts "unzip" among the Finder verbs. A user holding a `.clapp` has a
+program, not a folder to extract.
+
+**The icon ships as vector-derived `icns` embedded in the binary.** The mark is
+the Clean *Language* isotype — three flat dark bars, no dots, no gradient —
+redrawn as SVG rather than cropped from the Cloud lockup, since vector art
+rasterizes cleanly at all ten sizes an `icns` needs, including 16px where a
+downscaled crop smears. The reference vector is kept beside it as
+`assets/source-logo.svg`. `include_bytes!` rather than a disk read: `cln` is a
+single binary that must work on a machine with no Clean checkout.
+
+Rasterize with `sips -s format png`, never `qlmanage` — `qlmanage` composites
+onto white instead of preserving alpha, which baked opaque white corners into
+every size and gave the icon square white shoulders on any non-white background.
+Three plist keys are all required and do different jobs: `CFBundleIconFile` is
+the app's own icon, `CFBundleTypeIconFile` the icon for documents it opens, and
+`UTTypeIconFile` the icon on the exported type itself, which is what Finder can
+use before the app has ever run.
+
+Worth recording: through the ZIP-icon bug the icon was correct the whole time.
+`NSWorkspace iconForFile:` returned the isotype at every step, so every
+programmatic check passed while Finder showed something else. The visible
+symptom and the queryable state disagreed, which is what made a registration bug
+read as an icon bug.
+
+**A double-clicked package is inspected and offers actions; it does not run.**
+The droplet shows a summary — including the declared worlds — and real buttons.
+AppleScript allows at most three buttons, and the server case has four actions,
+so the three are spent on the actions and "Show details" is dropped from that
+screen; the summary already carries the fields that mattered. `choose from list`
+was tried and rejected: it renders options as rows in a small scrolling list
+behind generic Continue/Cancel, which reads as a file picker and buries the
+primary action. Install-time messaging renders `Extension::ALL` rather than
+restating the extension list, so it cannot drift from what manager claims.
+
 **Phase 7 — Everything else.** `cln repro`, `cln report`, `cln fixes`, `cln db migrate <verb>` (dispatches to framework), `cln api spec/sdk` (dispatches to framework).
 
 ---
