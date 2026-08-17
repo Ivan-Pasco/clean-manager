@@ -63,8 +63,13 @@ fn fake_shim(cln_home: &std::path::Path) {
 ///
 /// See the module docs: `osacompile` registers every bundle it signs, so the
 /// claim outlives the tempdir unless it is taken back explicitly.
+///
+/// Gated because only the macOS cases register anything, and `-D warnings` in
+/// CI makes a guard that is dead on Linux a build failure rather than a lint.
+#[cfg(target_os = "macos")]
 struct Registered(PathBuf);
 
+#[cfg(target_os = "macos")]
 impl Drop for Registered {
     fn drop(&mut self) {
         const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
